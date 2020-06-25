@@ -15,7 +15,7 @@ $ git submodule init && git submodule update
 Then run cmake (or the *configure.bat* file):
 
 ```
-cmake . -G "Visual Studio 16 2019" -A x64 -B build
+$ cmake . -G "Visual Studio 16 2019" -A x64 -B build
 ```
 
 Open the visual studio project, build and run it!
