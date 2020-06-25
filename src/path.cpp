@@ -107,6 +107,7 @@ bool SplitExtension(const std::string& filename, std::string& root, std::string&
     /* Otherwise it's a real extension */
     root = filename.substr(0, pos);
     ext = filename.substr(pos);
+    return true;
 }
 
 std::string PathJoin(std::string path, std::string filename)
