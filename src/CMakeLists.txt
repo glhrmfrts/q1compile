@@ -1,7 +1,7 @@
 set (TARGET_NAME q1compile)
 
 file (GLOB SOURCE_FILES *.cpp ../include/imgui/*.cpp
-  ../include/imgui/examples/imgui_impl_dx12.cpp
+  ../include/imgui/examples/imgui_impl_dx11.cpp
   ../include/imgui/examples/imgui_impl_win32.cpp
   ../include/imgui/misc/cpp/imgui_stdlib.cpp)
 file (GLOB HEADER_FILES *.h)
@@ -15,7 +15,7 @@ include_directories(../include/imgui-filebrowser)
 
 if (WIN32)
     target_link_libraries(${TARGET_NAME}
-        d3d12
+        d3d11
         d3dcompiler
         dxgi)
 endif (WIN32)
