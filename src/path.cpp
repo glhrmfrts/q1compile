@@ -4,6 +4,7 @@
 #include <iostream>
 #include <functional>
 #include "common.h"
+#include "console.h"
 #include "path.h"
 
 std::wstring Widen(const char* const text, const int size)
@@ -162,14 +163,18 @@ bool Copy(const std::string& from, const std::string& to)
 {
     std::FILE* const in = _wfopen(Widen(from).c_str(), L"rb");
     if(!in) {
-        std::cerr << "Copy: can't open " << from;
+        PrintError("Copy: can't open source ");
+        PrintError(from.c_str());
+        PrintError("\n");
         return false;
     }
     ScopeGuard close_in{ [in]() { std::fclose(in); } };
 
     std::FILE* const out = _wfopen(Widen(to).c_str(), L"wb");
     if(!out) {
-        std::cerr << "Copy: can't open " << to;
+        PrintError("Copy: can't open dest ");
+        PrintError(to.c_str());
+        PrintError("\n");
         return false;
     }
     ScopeGuard close_out{ [out]() { std::fclose(out); } };
@@ -200,9 +205,14 @@ bool CreatePath(const std::string& path)
 
 #ifdef _WIN32
     if(CreateDirectoryW(Widen(path).data(), nullptr) == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-        std::cerr << "Utility::Directory::mkpath(): error creating "
-                    << path << ": "
-                    << ErrorMessage(GetLastError());
+        PrintError("CreatePath: error creating ");
+        PrintError(path.c_str());
+        PrintError(": ");
+
+        std::wstring werr = std::wstring((const wchar_t*)ErrorMessage(GetLastError()));
+        std::string err = Narrow(werr);
+        PrintError(err.c_str());
+        PrintError("\n");
         return false;
     }
     return true;
@@ -221,7 +231,9 @@ bool ReadFileText(const std::string& path, std::string& str)
 {
     std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
     if (!fh) {
-        std::cerr << "ReadFileText: can't open " << path;
+        PrintError("ReadFileText: can't open ");
+        PrintError(path.c_str());
+        PrintError("\n");
         return false;
     }
     ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };

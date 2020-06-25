@@ -670,6 +670,8 @@ Application lifetime functions
 void qc_init()
 {    
     ClearConsole();
+    SetErrorLogFile("q1compile_err.log");
+    PrintError("Test\n");
 
     map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
     compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });

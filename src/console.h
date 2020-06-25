@@ -17,6 +17,8 @@ struct LogEntry
 
 void ClearConsole();
 
+void SetErrorLogFile(const std::string& path);
+
 void Print(char c);
 
 void Print(const char* cstr);
