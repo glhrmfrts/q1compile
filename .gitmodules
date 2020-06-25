@@ -1,0 +1,6 @@
+[submodule "include/imgui-filebrowser"]
+	path = include/imgui-filebrowser
+	url = https://github.com/glhrmfrts/imgui-filebrowser.git
+[submodule "include/imgui"]
+	path = include/imgui
+	url = https://github.com/ocornut/imgui.git
