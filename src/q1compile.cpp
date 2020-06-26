@@ -272,6 +272,22 @@ static void StartCompileJob(const Config& cfg, bool run_quake)
     compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
 }
 
+static void AddExtensionIfNone(std::string& path, const std::string& extension)
+{
+    std::string root, ext;
+    SplitExtension(path, root, ext);
+    if (ext.empty()) {
+        path = root + extension;
+    }
+}
+
+static bool IsExtension(const std::string& path, const std::string& extension)
+{
+    std::string root, ext;
+    SplitExtension(path, root, ext);
+    return ext == extension;
+}
+
 static void HandleMapSourceChanged()
 {
     map_file_watcher->SetPath(current_config.config_paths[PATH_MAP_SOURCE]);
@@ -348,6 +364,14 @@ static void SaveConfig(const std::string& path)
 
 static void LoadConfig(const std::string& path)
 {
+    if (!IsExtension(path, ".cfg")) {
+        console_auto_scroll = true;
+        PrintError("Invalid config file: ");
+        PrintError(path.c_str());
+        PrintError("\n");
+        return;
+    }
+
     current_config = ReadConfig(path);
     current_config.selected_preset_index = FindPresetIndex(current_config.selected_preset) + 1;
     if (current_config.selected_preset_index > 0) {
@@ -463,6 +487,13 @@ static void HandleCompileOnly()
     StartCompileJob(current_config, false);
 }
 
+static void HandleStopCompiling()
+{
+    if (compiling) {
+        stop_compiling = true;
+    }
+}
+
 static void HandleRun()
 {
     Config job_config = current_config;
@@ -494,22 +525,6 @@ static void HandlePathSelect(ConfigPath path)
 
     fb->SetTitle(config_paths_title[path]);
     fb->Open();
-}
-
-static void AddExtensionIfNone(std::string& path, const std::string& extension)
-{
-    std::string root, ext;
-    SplitExtension(path, root, ext);
-    if (ext.empty()) {
-        path = root + extension;
-    }
-}
-
-static bool IsExtension(const std::string& path, const std::string& extension)
-{
-    std::string root, ext;
-    SplitExtension(path, root, ext);
-    return ext == extension;
 }
 
 static void HandleFileBrowserCallback()
@@ -733,6 +748,10 @@ static void DrawMenuBar()
 
             if (ImGui::MenuItem("Compile only", "Ctrl+Shift+C", nullptr)) {
                 HandleCompileOnly();
+            }
+
+            if (ImGui::MenuItem("Stop", "Ctrl+B", nullptr)) {
+                HandleStopCompiling();
             }
 
             ImGui::Separator();
@@ -1227,7 +1246,6 @@ void qc_init()
 
     ClearConsole();
     SetErrorLogFile("q1compile_err.log");
-    PrintError("Test\n");
 
     map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
     compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
@@ -1260,6 +1278,11 @@ void qc_key_down(unsigned int key)
             else {
                 HandleCompileAndRun();
             }
+        }
+        break;
+    case 'B':
+        if (io.KeyCtrl) {
+            HandleStopCompiling();
         }
         break;
     case 'R':
