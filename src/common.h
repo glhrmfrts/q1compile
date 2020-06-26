@@ -10,7 +10,7 @@
 
 #define APP_NAME "Quake 1 Compile GUI"
 
-#define APP_VERSION "v0.2"
+#define APP_VERSION "v0.3"
 
 struct ScopeGuard
 {

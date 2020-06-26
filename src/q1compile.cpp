@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -6,7 +7,7 @@
 #include "console.h"
 #include "config.h"
 #include "file_watcher.h"
-#include "mutex_queue.h"
+#include "mutex_char_buffer.h"
 #include "path.h"
 #include "sub_process.h"
 #include "shell_command.h"
@@ -22,15 +23,18 @@ enum FileBrowserCallback {
     FB_CONFIG_STR,
 };
 
+static const ImVec4 INPUT_TEXT_READ_ONLY_COLOR{ 0.15f, 0.15f, 0.195f, 1.0f };
+
 static Config                       current_config;
 static UserConfig                   user_config;
 static std::string                  last_loaded_config_name;
 
 static std::unique_ptr<WorkQueue>   compile_queue;
-static MutexQueue<char>             compile_output;
+static MutexCharBuffer              compile_output;
 static std::atomic_bool             compiling;
 static std::atomic_bool             stop_compiling;
 static std::string                  compile_status;
+static bool                         last_job_ran_quake;
 
 static FileBrowserCallback                  fb_callback;
 static std::unique_ptr<ImGui::FileBrowser>  fb;
@@ -126,59 +130,138 @@ struct CompileJob
 
     void operator()()
     {
+        auto time_begin = std::chrono::system_clock::now();
+        
         compiling = true;
         compile_status = "Copying source file to work dir...";
         ScopeGuard end{ []() {
             compiling = false;
             stop_compiling = false;
-            compile_status = "Done.";
             console_lock_scroll = false;
+
+            if (compile_status.find("Finished") == std::string::npos) {
+                compile_status = "Stopped.";
+            }
         } };
+
+        compile_output.append("Starting to compile: ");
+        if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED)
+            compile_output.append(" qbsp=true ");
+        else
+            compile_output.append(" qbsp=false ");
+
+        if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED)
+            compile_output.append(" light=true ");
+        else
+            compile_output.append(" light=false ");
+
+        if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED)
+            compile_output.append(" vis=true ");
+        else
+            compile_output.append(" vis=false ");
+
+        compile_output.append("\n");
 
         std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
         std::string work_map = PathJoin(PathFromNative(config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
         std::string work_bsp = work_map;
         std::string work_lit = work_map;
+        bool copy_bsp = false;
         bool copy_lit = false;
 
         StrReplace(work_bsp, ".map", ".bsp");
         StrReplace(work_lit, ".map", ".lit");
 
-        if (!Copy(source_map, work_map))
+        if (Copy(source_map, work_map)) {
+            compile_output.append("Copied ");
+            compile_output.append(source_map);
+            compile_output.append(" to ");
+            compile_output.append(work_map);
+            compile_output.append("\n");
+        }
+        else {
             return;
+        }
 
         if (stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED) {
+            compile_output.append("Starting qbsp\n");
+
+            copy_bsp = true;
+
             std::string args = config.qbsp_args + " " + work_map;
             if (!RunTool("qbsp.exe", args))
                 return;
+
+            compile_output.append("Finished qbsp\n");
+            compile_output.append("------------------------------------------------\n");
+
         }
         if (stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED) {
+            compile_output.append("Starting light\n");
+
             copy_lit = true;
             std::string args = config.light_args + " " + work_bsp;
             if (!RunTool("light.exe", args))
                 return;
+
+            compile_output.append("Finished light\n");
+            compile_output.append("------------------------------------------------\n");
         }
         if (stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED) {
+            compile_output.append("Starting vis\n");
+
             std::string args = config.vis_args + " " + work_bsp;
             if (!RunTool("vis.exe", args))
                 return;
+
+            compile_output.append("Finished vis\n");
+            compile_output.append("------------------------------------------------\n");
         }
         if (stop_compiling) return;
 
         std::string out_bsp = PathJoin(PathFromNative(config.config_paths[PATH_OUTPUT_DIR]), PathFilename(work_bsp));
         std::string out_lit = PathJoin(PathFromNative(config.config_paths[PATH_OUTPUT_DIR]), PathFilename(work_lit));
 
-        if (!Copy(work_bsp, out_bsp)) return;
-        if (copy_lit && !Copy(work_lit, out_lit)) return;
+        if (copy_bsp && PathExists(work_bsp)) {
+            if (Copy(work_bsp, out_bsp)) {
+                compile_output.append("Copied ");
+                compile_output.append(work_bsp);
+                compile_output.append(" to ");
+                compile_output.append(out_bsp);
+                compile_output.append("\n");
+            }
+            else {
+                return;
+            }
+        }
+        
+        if (copy_lit && PathExists(work_lit)) {
+            if (Copy(work_lit, out_lit)) {
+                compile_output.append("Copied ");
+                compile_output.append(work_lit);
+                compile_output.append(" to ");
+                compile_output.append(out_lit);
+                compile_output.append("\n");
+            }
+        }
+
+        if (copy_lit || copy_bsp) compile_output.append("------------------------------------------------\n");
+
+        auto time_end = std::chrono::system_clock::now();
+        auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_begin);
+        float secs = time_elapsed.count() / 1000.0f;
+        compile_status = "Finished in " + std::to_string(secs) + " seconds.";
+        compile_output.append(compile_status);
+        compile_output.append("\n\n");
 
         if (run_quake) {
-            compile_status = "Running quake...";
+            compile_output.append("------------------------------------------------\n");
 
             std::string args = config.quake_args;
             if (args.find("+map") == std::string::npos) {
@@ -189,10 +272,16 @@ struct CompileJob
                 args.append(map_arg);
             }
 
+            compile_status = "Running quake with command-line: " + args;
+
+            compile_output.append(compile_status);
+            compile_output.append("\n");
+
             std::string cmd = PathFromNative(config.config_paths[PATH_ENGINE_EXE]);
             std::string pwd = PathDirectory(cmd);
             cmd.append(" ");
             cmd.append(args);
+
             ExecuteCompileProcess(cmd, pwd);
         }
     }
@@ -232,7 +321,7 @@ struct HelpJob
 };
 
 template<class T>
-static void ReadToMutexQueue(T& obj, std::atomic_bool* stop, MutexQueue<char>& out)
+static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, MutexCharBuffer& out)
 {
     char c;
     while (obj.ReadChar(c)) {
@@ -250,13 +339,13 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
         return;
     }
 
-    ReadToMutexQueue(proc, &stop_compiling, compile_output);
+    ReadToMutexCharBuffer(proc, &stop_compiling, compile_output);
 }
 
 static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
 {
     ShellCommand proc{ cmd, pwd };
-    ReadToMutexQueue(proc, nullptr, compile_output);
+    ReadToMutexCharBuffer(proc, nullptr, compile_output);
 }
 
 static void StartCompileJob(const Config& cfg, bool run_quake)
@@ -268,6 +357,8 @@ static void StartCompileJob(const Config& cfg, bool run_quake)
     if (compiling) {
         stop_compiling = true;
     }
+
+    last_job_ran_quake = run_quake;
 
     compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
 }
@@ -507,7 +598,14 @@ static void HandleRun()
 {
     Config job_config = current_config;
     job_config.tool_flags = 0;
-    StartCompileJob(job_config, true);
+
+    if (!last_job_ran_quake) {
+        // Instead of stopping the current compilation, just add the job to the queue
+        compile_queue->AddWork(0, CompileJob{ job_config, true });
+    }
+    else {
+        StartCompileJob(job_config, true);
+    }
 }
 
 static void HandleToolHelp(int tool_flag)
@@ -687,6 +785,50 @@ static void HandleExportPreset(int real_index)
     fb->Open();
 }
 
+static void HandleClearWorkingFiles()
+{
+    std::string source_map = PathFromNative(current_config.config_paths[PATH_MAP_SOURCE]);
+    std::string work_map = PathJoin(PathFromNative(current_config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
+    std::string work_bsp = work_map;
+    std::string work_lit = work_map;
+    StrReplace(work_bsp, ".map", ".bsp");
+    StrReplace(work_lit, ".map", ".lit");
+
+    console_auto_scroll = true;
+    if (RemovePath(work_bsp)) {
+        Print("Removed ");
+        Print(work_bsp.c_str());
+        Print("\n");
+    }
+    if (RemovePath(work_lit)) {
+        Print("Removed ");
+        Print(work_lit.c_str());
+        Print("\n");
+    }
+}
+
+static void HandleClearOutputFiles()
+{
+    std::string source_map = PathFromNative(current_config.config_paths[PATH_MAP_SOURCE]);
+    std::string out_map = PathJoin(PathFromNative(current_config.config_paths[PATH_OUTPUT_DIR]), PathFilename(source_map));
+    std::string out_bsp = out_map;
+    std::string out_lit = out_map;
+    StrReplace(out_bsp, ".map", ".bsp");
+    StrReplace(out_lit, ".map", ".lit");
+
+    console_auto_scroll = true;
+    if (RemovePath(out_bsp)) {
+        Print("Removed ");
+        Print(out_bsp.c_str());
+        Print("\n");
+    }
+    if (RemovePath(out_lit)) {
+        Print("Removed ");
+        Print(out_lit.c_str());
+        Print("\n");
+    }
+}
+
 static void PrintReadme()
 {
     static std::string readme;
@@ -773,6 +915,16 @@ static void DrawMenuBar()
 
             ImGui::Separator();
 
+            if (ImGui::MenuItem("Clear working files", "", nullptr)) {
+                HandleClearWorkingFiles();
+            }
+
+            if (ImGui::MenuItem("Clear output files", "", nullptr)) {
+                HandleClearOutputFiles();
+            }
+
+            ImGui::Separator();
+
             if (ImGui::MenuItem("Manage presets...", "Ctrl+P", nullptr)) {
                 show_preset_window = true;
             }
@@ -810,9 +962,18 @@ static bool DrawTextInput(const char* label, std::string& str, float spacing, Im
     DrawSpacing(spacing, 0);
     ImGui::SameLine();
 
+    if (flags & ImGuiInputTextFlags_ReadOnly) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, INPUT_TEXT_READ_ONLY_COLOR);
+    }
+
     ImGui::PushID(label);
     bool changed = ImGui::InputTextWithHint("", label, &str, flags);
     ImGui::PopID();
+
+    if (flags & ImGuiInputTextFlags_ReadOnly) {
+        ImGui::PopStyleColor(1);
+    }
+
     return changed;
 }
 
@@ -944,8 +1105,16 @@ static bool DrawPresetToolParams(ToolPreset& preset, const char* label, int tool
     DrawSpacing(spacing, 0);
     ImGui::SameLine();
 
+    if (flags & ImGuiInputTextFlags_ReadOnly) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, INPUT_TEXT_READ_ONLY_COLOR);
+    }
+
     if (ImGui::InputTextWithHint("", "command-line arguments", &args, flags)) {
         changed = true;
+    }
+
+    if (flags & ImGuiInputTextFlags_ReadOnly) {
+        ImGui::PopStyleColor();
     }
 
     ImGui::PopID();
@@ -958,7 +1127,7 @@ static void DrawConsoleView()
     static int num_entries;
 
     float height = (float)window_height - ImGui::GetCursorPosY() - 70.0f;
-    height = std::fmaxf(330.0f, height);
+    height = std::fmaxf(100.0f, height);
 
     if (ImGui::BeginChild("ConsoleView", ImVec2{ (float)window_width - 28, height }, true)) {
     
@@ -1155,41 +1324,69 @@ static void DrawCredits()
 
 static void DrawMainContent()
 {
-    if (DrawTextInput("Config Name: ", current_config.config_name, 5)) modified = true;
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::TreeNode("Info")) {
+        DrawSpacing(0, 5);
 
-    DrawSeparator(5);
+        if (DrawTextInput("Config Name: ", current_config.config_name, 5)) modified = true;
+        DrawTextInput("Path: ", user_config.loaded_config, 54, ImGuiInputTextFlags_ReadOnly);
 
-    if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20)) modified = true;
-    if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27)) modified = true;
-    if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f)) modified = true;
-    if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f)) modified = true;
-    if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f)) modified = true;
-
-    DrawSeparator(5);
-
-    if (ImGui::Checkbox("Watch map file for changes and pre-compile", &current_config.watch_map_file)) {
-        modified = true;
-        map_file_watcher->SetEnabled(current_config.watch_map_file);
+        ImGui::TreePop();
     }
 
     DrawSeparator(5);
 
-    DrawPresetCombo();
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::TreeNode("Paths")) {
+        DrawSpacing(0, 5);
 
-    if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, current_config.qbsp_args, 45)) {
-        modified = true;
-        modified_flags = true;
+        float offs = 0.0f;
+        if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20 + offs)) modified = true;
+        if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27 + offs)) modified = true;
+        if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f + offs)) modified = true;
+        if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f + offs)) modified = true;
+        if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f + offs)) modified = true;
+
+        ImGui::TreePop();
     }
-    if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, current_config.light_args, 38)) {
-        modified = true;
-        modified_flags = true;
+
+    DrawSeparator(5);
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::TreeNode("Tools options")) {
+        DrawSpacing(0, 5);
+
+        DrawPresetCombo();
+
+        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, current_config.qbsp_args, 45)) {
+            modified = true;
+            modified_flags = true;
+        }
+        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, current_config.light_args, 38)) {
+            modified = true;
+            modified_flags = true;
+        }
+        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, current_config.vis_args, 52)) {
+            modified = true;
+            modified_flags = true;
+        }
+        if (DrawToolParams("QUAKE", 0, current_config.quake_args, 38)) {
+            modified = true;
+        }
+        ImGui::TreePop();
     }
-    if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, current_config.vis_args, 52)) {
-        modified = true;
-        modified_flags = true;
-    }
-    if (DrawToolParams("QUAKE", 0, current_config.quake_args, 38)) {
-        modified = true;
+
+    DrawSeparator(5);
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::TreeNode("Other options")) {
+        DrawSpacing(0, 5);
+        if (ImGui::Checkbox("Watch map file for changes and pre-compile", &current_config.watch_map_file)) {
+            modified = true;
+            map_file_watcher->SetEnabled(current_config.watch_map_file);
+        }
+
+        ImGui::TreePop();
     }
 
     DrawSeparator(5);
@@ -1243,7 +1440,6 @@ static void DrawMainWindow()
     ImGui::PopStyleVar(1);
     
 }
-
 
 /*
 ====================

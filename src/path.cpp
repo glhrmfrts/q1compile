@@ -215,8 +215,36 @@ bool CreatePath(const std::string& path)
         PrintError("\n");
         return false;
     }
-    return true;
 #endif
+
+    return true;
+}
+
+bool RemovePath(const std::string& path)
+{
+    if (path.empty()) return false;
+
+    if (path.back() == '/')
+        return RemovePath(path.substr(0, path.size()-1));
+
+    if (!PathExists(path))
+        return false;
+
+#ifdef _WIN32
+    if (DeleteFileW(Widen(path).data()) == 0) {
+        PrintError("RemovePath: error removing ");
+        PrintError(path.c_str());
+        PrintError(": ");
+
+        std::wstring werr = std::wstring((const wchar_t*)ErrorMessage(GetLastError()));
+        std::string err = Narrow(werr);
+        PrintError(err.c_str());
+        PrintError("\n");
+        return false;
+    }
+#endif
+
+    return true;
 }
 
 static std::size_t GetFileSize(std::FILE* const fh)

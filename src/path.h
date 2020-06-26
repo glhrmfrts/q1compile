@@ -24,6 +24,8 @@ bool Copy(const std::string& from, const std::string& to);
 
 bool CreatePath(const std::string& path);
 
+bool RemovePath(const std::string& path);
+
 bool ReadFileText(const std::string& path, std::string& str);
 
 unsigned long long GetFileModifiedTime(const std::string& path);
