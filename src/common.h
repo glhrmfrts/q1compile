@@ -5,10 +5,12 @@
 
 #include <functional>
 
-#define WINDOW_WIDTH  1024
-#define WINDOW_HEIGHT 768
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT 860
 
 #define APP_NAME "Quake 1 Compile GUI"
+
+#define APP_VERSION "v0.2"
 
 struct ScopeGuard
 {

@@ -145,22 +145,23 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "qbsp_enabled") {
         p.ParseBool(b);
         if (b)
-            config.flags |= CONFIG_FLAG_QBSP_ENABLED;
+            config.tool_flags |= CONFIG_FLAG_QBSP_ENABLED;
     }
     else if (name == "light_enabled") {
         p.ParseBool(b);
         if (b)
-            config.flags |= CONFIG_FLAG_LIGHT_ENABLED;
+            config.tool_flags |= CONFIG_FLAG_LIGHT_ENABLED;
     }
     else if (name == "vis_enabled") {
         p.ParseBool(b);
         if (b)
-            config.flags |= CONFIG_FLAG_VIS_ENABLED;
+            config.tool_flags |= CONFIG_FLAG_VIS_ENABLED;
     }
     else if (name == "watch_map_file") {
-        p.ParseBool(b);
-        if (b)
-            config.flags |= CONFIG_FLAG_WATCH_MAP_FILE;
+        p.ParseBool(config.watch_map_file);
+    }
+    else if (name == "selected_preset") {
+        p.ParseString(config.selected_preset);
     }
     else {
         int idx = -1;
@@ -179,13 +180,72 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
 
 static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLineParser& p)
 {
-    if (name == "loaded_config")
+    if (name == "loaded_config") {
         p.ParseString(config.loaded_config);
+    }
+    else if (name == "last_import_preset_location") {
+        p.ParseString(config.last_import_preset_location);
+    }
+    else if (name == "last_export_preset_location") {
+        p.ParseString(config.last_export_preset_location);
+    }
     else if (name == "recent_config") {
         std::string value;
         if (p.ParseString(value))
             config.recent_configs.push_back(value);
     }
+    else if (name == "tool_preset") {
+        ToolPreset preset = {};
+        if (!p.ParseString(preset.name)) return;
+        config.tool_presets.push_back(preset);
+    }
+    else if (name == "tool_preset_qbsp_args") {
+        auto& preset = config.tool_presets.back();
+        if (!p.ParseString(preset.qbsp_args)) return;
+    }
+    else if (name == "tool_preset_light_args") {
+        auto& preset = config.tool_presets.back();
+        if (!p.ParseString(preset.light_args)) return;
+    }
+    else if (name == "tool_preset_vis_args") {
+        auto& preset = config.tool_presets.back();
+        if (!p.ParseString(preset.vis_args)) return;
+    }
+    else if (name == "tool_preset_qbsp_enabled") {
+        auto& preset = config.tool_presets.back();
+
+        bool qbsp_enabled;
+        if (!p.ParseBool(qbsp_enabled)) return;
+
+        if (qbsp_enabled) preset.flags |= CONFIG_FLAG_QBSP_ENABLED;
+    }
+    else if (name == "tool_preset_light_enabled") {
+        auto& preset = config.tool_presets.back();
+
+        bool light_enabled;
+        if (!p.ParseBool(light_enabled)) return;
+
+        if (light_enabled) preset.flags |= CONFIG_FLAG_LIGHT_ENABLED;
+    }
+    else if (name == "tool_preset_vis_enabled") {
+        auto& preset = config.tool_presets.back();
+
+        bool vis_enabled;
+        if (!p.ParseBool(vis_enabled)) return;
+
+        if (vis_enabled) preset.flags |= CONFIG_FLAG_VIS_ENABLED;
+    }
+}
+
+static void WriteToolPreset(std::ofstream& fh, const ToolPreset& preset)
+{
+    WriteVar(fh, "tool_preset", preset.name);
+    WriteVar(fh, "tool_preset_qbsp_args", preset.qbsp_args);
+    WriteVar(fh, "tool_preset_light_args", preset.light_args);
+    WriteVar(fh, "tool_preset_vis_args", preset.vis_args);
+    WriteVar(fh, "tool_preset_qbsp_enabled", (preset.flags & CONFIG_FLAG_QBSP_ENABLED));
+    WriteVar(fh, "tool_preset_light_enabled", (preset.flags & CONFIG_FLAG_LIGHT_ENABLED));
+    WriteVar(fh, "tool_preset_vis_enabled", (preset.flags & CONFIG_FLAG_VIS_ENABLED));
 }
 
 void WriteConfig(const Config& config, const std::string& path)
@@ -201,10 +261,11 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "light_args", config.light_args);
     WriteVar(fh, "vis_args", config.vis_args);
     WriteVar(fh, "quake_args", config.quake_args);
-    WriteVar(fh, "qbsp_enabled", 0 != (config.flags & CONFIG_FLAG_QBSP_ENABLED));
-    WriteVar(fh, "light_enabled", 0 != (config.flags & CONFIG_FLAG_LIGHT_ENABLED));
-    WriteVar(fh, "vis_enabled", 0 != (config.flags & CONFIG_FLAG_VIS_ENABLED));
-    WriteVar(fh, "watch_map_file", 0 != (config.flags & CONFIG_FLAG_WATCH_MAP_FILE));
+    WriteVar(fh, "qbsp_enabled", 0 != (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED));
+    WriteVar(fh, "light_enabled", 0 != (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED));
+    WriteVar(fh, "vis_enabled", 0 != (config.tool_flags & CONFIG_FLAG_VIS_ENABLED));
+    WriteVar(fh, "watch_map_file", config.watch_map_file);
+    WriteVar(fh, "selected_preset", config.selected_preset);
 }
 
 Config ReadConfig(const std::string& path)
@@ -225,8 +286,16 @@ void WriteUserConfig(const UserConfig& config)
     std::ofstream fh{ path };
 
     WriteVar(fh, "loaded_config", config.loaded_config);
+    WriteVar(fh, "last_import_preset_location", config.last_import_preset_location);
+    WriteVar(fh, "last_export_preset_location", config.last_export_preset_location);
+
     for (const auto& rc : config.recent_configs) {
         WriteVar(fh, "recent_config", rc);
+    }
+    for (const auto& preset : config.tool_presets) {
+        if (!preset.builtin) {
+            WriteToolPreset(fh, preset);
+        }
     }
 }
 
@@ -241,4 +310,49 @@ UserConfig ReadUserConfig()
         SetUserConfigVar(config, name, p);
     });
     return config;
+}
+
+void WriteToolPreset(const ToolPreset& preset, const std::string& path)
+{
+    std::ofstream fh{ path };
+    WriteToolPreset(fh, preset);
+}
+
+ToolPreset ReadToolPreset(const std::string& path)
+{
+    if (!PathExists(path))
+        return {};
+
+    ToolPreset preset = {};
+    ParseConfigFile(path, [&preset](std::string name, ConfigLineParser& p) {
+        bool b;
+        if (name == "tool_preset") {
+            p.ParseString(preset.name);
+        }
+        else if (name == "tool_preset_qbsp_args") {
+            p.ParseString(preset.qbsp_args);
+        }
+        else if (name == "tool_preset_light_args") {
+            p.ParseString(preset.light_args);
+        }
+        else if (name == "tool_preset_vis_args") {
+            p.ParseString(preset.vis_args);
+        }
+        else if (name == "tool_preset_qbsp_enabled") {
+            if (p.ParseBool(b)) {
+                preset.flags |= CONFIG_FLAG_QBSP_ENABLED;
+            }
+        }
+        else if (name == "tool_preset_light_enabled") {
+            if (p.ParseBool(b)) {
+                preset.flags |= CONFIG_FLAG_LIGHT_ENABLED;
+            }
+        }
+        else if (name == "tool_preset_vis_enabled") {
+            if (p.ParseBool(b)) {
+                preset.flags |= CONFIG_FLAG_VIS_ENABLED;
+            }
+        }
+    });
+    return preset;
 }

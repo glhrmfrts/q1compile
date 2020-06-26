@@ -28,3 +28,13 @@ void PrintError(char c);
 void PrintError(const char* cstr);
 
 std::vector<LogEntry>& GetLogEntries();
+
+template<typename T> void PrintValue(const T& arg) {
+    std::string str = std::to_string(arg);
+    Print(str.c_str());
+}
+
+template<typename T> void PrintValueError(const T& arg) {
+    std::string str = std::to_string(arg);
+    PrintError(str.c_str());
+}

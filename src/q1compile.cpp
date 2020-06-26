@@ -17,6 +17,8 @@
 enum FileBrowserCallback {
     FB_LOAD_CONFIG,
     FB_SAVE_CONFIG,
+    FB_IMPORT_PRESET,
+    FB_EXPORT_PRESET,
     FB_CONFIG_STR,
 };
 
@@ -37,6 +39,59 @@ static std::unique_ptr<FileWatcher> map_file_watcher;
 
 static std::atomic_bool console_auto_scroll = true;
 static std::atomic_bool console_lock_scroll = false;
+
+static bool modified;
+static bool modified_flags;
+static bool show_preset_window;
+static bool show_confirm_new_window;
+static int preset_to_export;
+
+static int window_width = WINDOW_WIDTH;
+static int window_height = WINDOW_HEIGHT;
+static bool app_running;
+
+static std::vector<ToolPreset> builtin_presets = {
+    ToolPreset{
+        "No Vis (built-in)",
+        "",
+        "",
+        "",
+        (CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED),
+        true
+    },
+    ToolPreset{
+        "No Vis, Only ents (built-in)",
+        "-onlyents",
+        "-onlyents",
+        "",
+        (CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED),
+        true
+    },
+    ToolPreset{
+        "Fast Vis (built-in)",
+        "",
+        "",
+        "-fast",
+        (CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED | CONFIG_FLAG_VIS_ENABLED),
+        true
+    },
+    ToolPreset{
+        "Full (built-in)",
+        "",
+        "-extra4",
+        "-level 4",
+        (CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED | CONFIG_FLAG_VIS_ENABLED),
+        true
+    },
+};
+
+static std::vector<std::string> config_paths_title = {
+    "Select Tools Dir",
+    "Select Work Dir",
+    "Select Output Dir",
+    "Select Engine Exe",
+    "Select Map Source"
+};
 
 static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd);
 
@@ -94,14 +149,14 @@ struct CompileJob
 
         if (stop_compiling) return;
 
-        if (config.flags & CONFIG_FLAG_QBSP_ENABLED) {
+        if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED) {
             std::string args = config.qbsp_args + " " + work_map;
             if (!RunTool("qbsp.exe", args))
                 return;
         }
         if (stop_compiling) return;
 
-        if (config.flags & CONFIG_FLAG_LIGHT_ENABLED) {
+        if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED) {
             copy_lit = true;
             std::string args = config.light_args + " " + work_bsp;
             if (!RunTool("light.exe", args))
@@ -109,7 +164,7 @@ struct CompileJob
         }
         if (stop_compiling) return;
 
-        if (config.flags & CONFIG_FLAG_VIS_ENABLED) {
+        if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED) {
             std::string args = config.vis_args + " " + work_bsp;
             if (!RunTool("vis.exe", args))
                 return;
@@ -224,6 +279,7 @@ static void HandleMapSourceChanged()
 
 static void SetConfigPath(ConfigPath path, const std::string& value)
 {
+    modified = true;
     current_config.config_paths[path] = value;
     if (path == PATH_MAP_SOURCE) {
         HandleMapSourceChanged();
@@ -244,13 +300,47 @@ static void AddRecentConfig(const std::string& path)
     user_config.recent_configs.push_back(path);
 }
 
+static int FindPresetIndex(const std::string& name)
+{
+    for (std::size_t i = 0; i < user_config.tool_presets.size(); i++) {
+        if (user_config.tool_presets[i].name == name) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static bool ComparePresetToConfig(const ToolPreset& preset)
+{
+    if (preset.flags != current_config.tool_flags)
+        return true;
+    if (preset.qbsp_args != current_config.qbsp_args)
+        return true;
+    if (preset.light_args != current_config.light_args)
+        return true;
+    if (preset.vis_args != current_config.vis_args)
+        return true;
+
+    return false;
+}
+
 static void SaveConfig(const std::string& path)
 {
+    int pi = current_config.selected_preset_index - 1;
+    if (pi >= 0) {
+        current_config.selected_preset = user_config.tool_presets[pi].name;
+    }
+    else {
+        current_config.selected_preset = "";
+    }
+
     WriteConfig(current_config, path);
     user_config.loaded_config = path;
     last_loaded_config_name = current_config.config_name;
     WriteUserConfig(user_config);
 
+    modified = false;
+    console_auto_scroll = true;
     Print("Saved config: ");
     Print(path.c_str());
     Print("\n");
@@ -259,13 +349,52 @@ static void SaveConfig(const std::string& path)
 static void LoadConfig(const std::string& path)
 {
     current_config = ReadConfig(path);
+    current_config.selected_preset_index = FindPresetIndex(current_config.selected_preset) + 1;
+    if (current_config.selected_preset_index > 0) {
+        if (ComparePresetToConfig(user_config.tool_presets[current_config.selected_preset_index - 1])) {
+            modified_flags = true;
+        }
+    }
+
     user_config.loaded_config = path;
     last_loaded_config_name = current_config.config_name;
     WriteUserConfig(user_config);
 
+    HandleMapSourceChanged();
+
+    modified = false;
+    console_auto_scroll = true;
     Print("Loaded config: ");
     Print(path.c_str());
     Print("\n");
+}
+
+static void CopyPreset(const ToolPreset& preset)
+{
+    modified = ComparePresetToConfig(preset);
+    current_config.qbsp_args = preset.qbsp_args;
+    current_config.light_args = preset.light_args;
+    current_config.vis_args = preset.vis_args;
+    current_config.tool_flags = preset.flags;
+}
+
+static ToolPreset& GetPreset(int i)
+{
+    return user_config.tool_presets[i - 1];
+}
+
+static void AddBuiltinPresets()
+{
+    for (const auto& preset : builtin_presets) {
+        if (FindPresetIndex(preset.name) == -1) {
+            user_config.tool_presets.insert(user_config.tool_presets.begin(), preset);
+        }
+    }
+}
+
+static bool ShouldConfigPathBeDirectory(ConfigPath path)
+{
+    return (path == PATH_TOOLS_DIR) || (path == PATH_WORK_DIR) || (path == PATH_OUTPUT_DIR);
 }
 
 /*
@@ -276,15 +405,23 @@ UI Event Handlers
 
 static void HandleNewConfig()
 {
+    if (modified) {
+        show_confirm_new_window = true;
+        return;
+    }
+
     AddRecentConfig(user_config.loaded_config);
 
     current_config = {};
     user_config.loaded_config = "";
+    WriteUserConfig(user_config);
 }
 
 static void HandleLoadConfig()
 {
     fb_callback = FB_LOAD_CONFIG;
+    fb->SetTitle("Load Config");
+    fb->SetFlags(0);
     fb->SetPwd(PathDirectory(user_config.loaded_config));
     fb->Open();
 }
@@ -300,6 +437,8 @@ static void HandleLoadRecentConfig(int i)
 static void HandleSaveConfigAs()
 {
     fb_callback = FB_SAVE_CONFIG;
+    fb->SetTitle("Save Config As...");
+    fb->SetFlags(ImGuiFileBrowserFlags_EnterNewFilename);
     fb->SetPwd(PathDirectory(user_config.loaded_config));
     fb->Open();
 }
@@ -327,7 +466,7 @@ static void HandleCompileOnly()
 static void HandleRun()
 {
     Config job_config = current_config;
-    job_config.flags = 0;
+    job_config.tool_flags = 0;
     StartCompileJob(job_config, true);
 }
 
@@ -342,13 +481,35 @@ static void HandleToolHelp(int tool_flag)
 static void HandlePathSelect(ConfigPath path)
 {
     fb_callback = (FileBrowserCallback)(FB_CONFIG_STR + path);
+    bool should_be_dir = ShouldConfigPathBeDirectory(path);
     std::string pwd = PathFromNative(current_config.config_paths[path]);
-    if (PathIsDirectory(pwd))
+
+    if (should_be_dir && PathIsDirectory(pwd))
         fb->SetPwd(pwd);
     else
         fb->SetPwd(PathDirectory(pwd));
 
+    if (should_be_dir)
+        fb->SetFlags(ImGuiFileBrowserFlags_SelectDirectory | ImGuiFileBrowserFlags_CreateNewDir);
+
+    fb->SetTitle(config_paths_title[path]);
     fb->Open();
+}
+
+static void AddExtensionIfNone(std::string& path, const std::string& extension)
+{
+    std::string root, ext;
+    SplitExtension(path, root, ext);
+    if (ext.empty()) {
+        path = root + extension;
+    }
+}
+
+static bool IsExtension(const std::string& path, const std::string& extension)
+{
+    std::string root, ext;
+    SplitExtension(path, root, ext);
+    return ext == extension;
 }
 
 static void HandleFileBrowserCallback()
@@ -356,6 +517,14 @@ static void HandleFileBrowserCallback()
     switch (fb_callback) {
     case FB_LOAD_CONFIG: {
         std::string path = PathFromNative(fb->GetSelected().string());
+        if (!IsExtension(path, ".cfg")) {
+            console_auto_scroll = true;
+            PrintError("Invalid config file: ");
+            PrintError(path.c_str());
+            PrintError("\n");
+            return;
+        }
+
         if (PathExists(path)) {
             if (path != user_config.loaded_config) {
                 AddRecentConfig(user_config.loaded_config);
@@ -366,10 +535,66 @@ static void HandleFileBrowserCallback()
 
     case FB_SAVE_CONFIG: {
         std::string path = PathFromNative(fb->GetSelected().string());
+        AddExtensionIfNone(path, ".cfg");
+
         if (path != user_config.loaded_config) {
             AddRecentConfig(user_config.loaded_config);
         }
         SaveConfig(path);
+    } break;
+
+    case FB_IMPORT_PRESET: {
+        std::string path = PathFromNative(fb->GetSelected().string());
+        if (!IsExtension(path, ".pre")) {
+            console_auto_scroll = true;
+            PrintError("Invalid preset file: ");
+            PrintError(path.c_str());
+            PrintError("\n");
+            return;
+        }
+
+        if (PathExists(path)) {
+            ToolPreset preset = ReadToolPreset(path);
+            if (preset.name.empty()) {
+                console_auto_scroll = true;
+                PrintError("Invalid preset file: ");
+                PrintError(path.c_str());
+                PrintError("\n");
+                return;
+            }
+
+            while (StrReplace(preset.name, "(built-in)", "")) {}
+
+            user_config.last_import_preset_location = PathDirectory(path);
+            user_config.tool_presets.push_back(preset);
+            WriteUserConfig(user_config);
+
+            show_preset_window = true;
+
+            console_auto_scroll = true;
+            Print("Preset imported: ");
+            Print(path.c_str());
+            Print("\n");
+        }
+    } break;
+
+    case FB_EXPORT_PRESET: {
+        std::string path = PathFromNative(fb->GetSelected().string());
+        AddExtensionIfNone(path, ".pre");
+
+        auto exp_preset = user_config.tool_presets[preset_to_export];
+        while (StrReplace(exp_preset.name, "(built-in)", "")) {}
+        WriteToolPreset(exp_preset, path);
+        
+        user_config.last_export_preset_location = PathDirectory(path);
+        WriteUserConfig(user_config);
+
+        show_preset_window = true;
+
+        console_auto_scroll = true;
+        Print("Preset exported: ");
+        Print(path.c_str());
+        Print("\n");
     } break;
 
     default:
@@ -380,6 +605,60 @@ static void HandleFileBrowserCallback()
             );
         break;
     }
+}
+
+static void HandleFileBrowserCancel()
+{
+    switch (fb_callback) {
+    case FB_IMPORT_PRESET:
+    case FB_EXPORT_PRESET:
+        show_preset_window = true;
+        break;
+    }
+}
+
+static void HandleSelectPreset(int i)
+{
+    if (i < 1) {
+        PrintError("invalid preset: ");
+        PrintValueError(i);
+        PrintError("\n");
+        return;
+    }
+
+    current_config.selected_preset_index = i;
+    CopyPreset(user_config.tool_presets[i - 1]);
+
+    modified_flags = false;
+}
+
+static void HandleImportPreset()
+{
+    fb_callback = FB_IMPORT_PRESET;
+    if (!user_config.last_import_preset_location.empty()) {
+        fb->SetPwd(PathFromNative(user_config.last_import_preset_location));
+    }
+    else {
+        fb->SetPwd();
+    }
+    fb->SetTitle("Import Tool Preset");
+    fb->SetFlags(0);
+    fb->Open();
+}
+
+static void HandleExportPreset(int real_index)
+{
+    preset_to_export = real_index;
+    fb_callback = FB_EXPORT_PRESET;
+    if (!user_config.last_export_preset_location.empty()) {
+        fb->SetPwd(PathFromNative(user_config.last_export_preset_location));
+    }
+    else {
+        fb->SetPwd();
+    }
+    fb->SetTitle("Export Tool Preset");
+    fb->SetFlags(ImGuiFileBrowserFlags_EnterNewFilename);
+    fb->Open();
 }
 
 static void PrintReadme()
@@ -441,7 +720,7 @@ static void DrawMenuBar()
             ImGui::Separator();
 
             if (ImGui::MenuItem("Quit", "Ctrl+Q", nullptr)) {
-                HandleSaveConfigAs();
+                app_running = false;
             }
 
             ImGui::EndMenu();
@@ -460,6 +739,12 @@ static void DrawMenuBar()
 
             if (ImGui::MenuItem("Run", "Ctrl+R", nullptr)) {
                 HandleRun();
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Manage presets...", "Ctrl+P", nullptr)) {
+                show_preset_window = true;
             }
 
             ImGui::EndMenu();
@@ -488,7 +773,7 @@ static void DrawSeparator(float margin)
     DrawSpacing(0, margin);
 }
 
-static bool DrawTextInput(const char* label, std::string& str, float spacing)
+static bool DrawTextInput(const char* label, std::string& str, float spacing, ImGuiInputTextFlags flags = 0)
 {
     ImGui::Text(label);
     ImGui::SameLine();
@@ -496,14 +781,15 @@ static bool DrawTextInput(const char* label, std::string& str, float spacing)
     ImGui::SameLine();
 
     ImGui::PushID(label);
-    bool changed = ImGui::InputTextWithHint("", label, &str);
+    bool changed = ImGui::InputTextWithHint("", label, &str, flags);
     ImGui::PopID();
     return changed;
 }
 
-static void DrawFileInput(const char* label, ConfigPath path, float spacing)
+static bool DrawFileInput(const char* label, ConfigPath path, float spacing)
 {
-    if (DrawTextInput(label, current_config.config_paths[path], spacing)) {
+    bool changed = DrawTextInput(label, current_config.config_paths[path], spacing);
+    if (changed) {
         if (path == PATH_MAP_SOURCE) {
             HandleMapSourceChanged();
         }
@@ -516,20 +802,64 @@ static void DrawFileInput(const char* label, ConfigPath path, float spacing)
         HandlePathSelect(path);
     }
     ImGui::PopID();
+
+    return changed;
 }
 
-static void DrawToolParams(const char* label, int tool_flag, std::string& args, float spacing)
+static void DrawPresetCombo()
 {
+    ImGui::Text("Preset: "); ImGui::SameLine();
+
+    DrawSpacing(40, 0); ImGui::SameLine();
+
+    std::string selected_preset_name = "None";
+    if (current_config.selected_preset_index > 0) {
+        selected_preset_name = GetPreset(current_config.selected_preset_index).name;
+
+        if (modified_flags) {
+            selected_preset_name.append(" (modified)");
+        }
+    }
+
+    if (ImGui::BeginCombo("##presets", selected_preset_name.c_str())) {
+        if (ImGui::Selectable("None", false)) {
+            current_config.selected_preset_index = 0;
+            CopyPreset({});
+        }
+
+        for (std::size_t i = 0; i < user_config.tool_presets.size(); i++) {
+            auto& preset = user_config.tool_presets[i];
+            bool selected = (i + 1) == current_config.selected_preset_index;
+
+            if (ImGui::Selectable(preset.name.c_str(), selected)) {
+                HandleSelectPreset(i + 1);
+            }
+        }
+
+        DrawSeparator(2);
+
+        if (ImGui::Selectable("Manage presets...", false)) {
+            show_preset_window = true;
+        }
+        ImGui::EndCombo();
+    }
+}
+
+static bool DrawToolParams(const char* label, int tool_flag, std::string& args, float spacing)
+{
+    bool changed = false;
     ImGui::PushID(tool_flag);
 
     if (tool_flag) {
-        bool checked = current_config.flags & tool_flag;
+        bool checked = current_config.tool_flags & tool_flag;
         if (ImGui::Checkbox(label, &checked)) {
+            changed = true;
+
             if (checked) {
-                current_config.flags |= tool_flag;
+                current_config.tool_flags |= tool_flag;
             }
             else {
-                current_config.flags = current_config.flags & ~tool_flag;
+                current_config.tool_flags = current_config.tool_flags & ~tool_flag;
             }
         }
     }
@@ -542,7 +872,9 @@ static void DrawToolParams(const char* label, int tool_flag, std::string& args, 
     DrawSpacing(spacing, 0);
     ImGui::SameLine();
 
-    ImGui::InputTextWithHint("", "command-line arguments", &args);
+    if (ImGui::InputTextWithHint("", "command-line arguments", &args)) {
+        changed = true;
+    }
 
     if (tool_flag) {
         ImGui::SameLine();
@@ -552,17 +884,57 @@ static void DrawToolParams(const char* label, int tool_flag, std::string& args, 
     }
 
     ImGui::PopID();
+
+    return changed;
+}
+
+static bool DrawPresetToolParams(ToolPreset& preset, const char* label, int tool_flag, std::string& args, float spacing, ImGuiInputTextFlags flags = 0)
+{
+    bool changed = false;
+    ImGui::PushID(tool_flag);
+
+    if (tool_flag) {
+        bool checked = preset.flags & tool_flag;
+        if (ImGui::Checkbox(label, &checked)) {
+            changed = true;
+            if (checked) {
+                preset.flags |= tool_flag;
+            }
+            else {
+                preset.flags = preset.flags & ~tool_flag;
+            }
+        }
+    }
+    else {
+        DrawSpacing(14, 0); ImGui::SameLine();
+        ImGui::Text(label);
+    }
+    ImGui::SameLine();
+
+    DrawSpacing(spacing, 0);
+    ImGui::SameLine();
+
+    if (ImGui::InputTextWithHint("", "command-line arguments", &args, flags)) {
+        changed = true;
+    }
+
+    ImGui::PopID();
+
+    return changed;
 }
 
 static void DrawConsoleView()
 {
     static int num_entries;
 
-    if (ImGui::BeginChild("ConsoleView", ImVec2{ 996, 310 }, true)) {
+    float height = (float)window_height - ImGui::GetCursorPosY() - 70.0f;
+    height = std::fmaxf(330.0f, height);
+
+    if (ImGui::BeginChild("ConsoleView", ImVec2{ (float)window_width - 28, height }, true)) {
     
         auto& ents = GetLogEntries();
         for (const auto& ent : ents) {
-            ImVec4 col = ImVec4{ 0.8f, 0.8f, 0.8f, 1.0 };
+            ImVec4 col = ImVec4{ 0.9f, 0.9f, 0.9f, 1.0 };
             if (ent.level == LOG_ERROR) {
                 col = ImVec4{ 1.0f, 0.0f, 0.0f, 1.0 };
             }
@@ -571,49 +943,224 @@ static void DrawConsoleView()
 
         bool should_scroll_down = (
             (num_entries != ents.size() && console_auto_scroll) || console_lock_scroll
-            );
+        );
         if (should_scroll_down) {
             ImGui::SetScrollHereY();
         }
 
         num_entries = ents.size();
-
     }
+
     ImGui::EndChild();
+}
+
+static void DrawPresetWindow()
+{
+    static bool prev_show;
+
+    if (show_preset_window) {
+        if (!prev_show) {
+            ImGui::OpenPopup("Manage Tools Presets");
+        }
+
+        ImGui::SetNextWindowSize({ window_width*0.5f, window_height * 0.7f }, ImGuiCond_Always);
+        ImGui::SetNextWindowPos({ window_width * 0.5f, window_height * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        if (ImGui::BeginPopupModal("Manage Tools Presets", &show_preset_window, flags)) {
+            static int newly_added_index = -1;
+            int remove_index = -1;
+            int dup_index = -1;
+
+            if (ImGui::Button("Add Preset")) {
+                newly_added_index = user_config.tool_presets.size();
+
+                ToolPreset preset = {};
+                preset.name = "New Preset";
+                user_config.tool_presets.push_back(preset);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Import Preset")) {
+                ImGui::CloseCurrentPopup();
+                show_preset_window = false;
+                HandleImportPreset();
+            }
+
+            DrawSpacing(0, 5);
+
+            if (ImGui::BeginChild("Preset list")) {
+                for (int i = 0; i < (int)user_config.tool_presets.size(); i++) {
+                    auto& preset = user_config.tool_presets[i];
+
+                    ImGui::PushID(i);
+
+                    // If it's a newly added preset, set it open
+                    if (newly_added_index != -1 && (i == newly_added_index)) {
+                        ImGui::SetNextTreeNodeOpen(true);
+                        newly_added_index = -1;
+                    }
+
+                    if (ImGui::TreeNode("", preset.name.c_str())) {
+                        DrawSpacing(0, 5);
+
+                        ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
+
+                        DrawTextInput("Name: ", preset.name, 23, flags);
+
+                        DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 14, flags);
+                        DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 7, flags);
+                        DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 21, flags);
+                        //DrawPresetToolParams(preset, "QUAKE", 0, preset.quake_args, 8);
+
+                        ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10, 0); ImGui::SameLine();
+                        if (ImGui::BeginCombo("##actions", "Actions...")) {
+                            if (ImGui::Selectable("Copy")) {
+                                dup_index = i;
+                            }
+                            if (ImGui::Selectable("Select")) {
+                                HandleSelectPreset(i + 1);
+                            }
+                            if (ImGui::Selectable("Export")) {
+                                ImGui::CloseCurrentPopup();
+                                show_preset_window = false;
+                                HandleExportPreset(i);
+                            }
+                            if (!preset.builtin) {
+                                if (ImGui::Selectable("Remove")) {
+                                    remove_index = i;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+
+                    DrawSeparator(5);
+                }
+            }
+            ImGui::EndChild();
+
+            if (remove_index != -1) {
+                if (remove_index + 1 == current_config.selected_preset_index) {
+                    current_config.selected_preset_index = 0;
+                }
+
+                user_config.tool_presets.erase(user_config.tool_presets.begin() + remove_index);
+            }
+            if (dup_index != -1) {
+                auto dup_preset = user_config.tool_presets[dup_index];
+                dup_preset.builtin = false;
+                while (StrReplace(dup_preset.name, "(built-in)", "")) {}
+                dup_preset.name.append(" (copy)");
+
+                auto it = user_config.tool_presets.begin() + dup_index + 1;
+                user_config.tool_presets.insert(it, dup_preset);
+
+                newly_added_index = dup_index + 1;
+            }
+
+            ImGui::EndPopup();
+        }
+
+        // Just closed
+        if (!show_preset_window) {
+            WriteUserConfig(user_config);
+        }
+    }
+
+    prev_show = show_preset_window;
+}
+
+static void DrawConfirmNewWindow()
+{
+    static bool prev_show;
+
+    if (show_confirm_new_window) {
+        if (!prev_show) {
+            ImGui::OpenPopup("Save Changes");
+        }
+
+        bool clicked_btn = false;
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        if (ImGui::BeginPopupModal("Save Changes", &show_confirm_new_window, flags)) {
+            ImGui::Text("You have unsaved changes to your config, do you want to save?");
+            DrawSeparator(5);
+
+            if (ImGui::Button("Save")) {
+                ImGui::CloseCurrentPopup();
+                clicked_btn = true;
+                show_confirm_new_window = false;
+                HandleSaveConfig();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Discard")) {
+                ImGui::CloseCurrentPopup();
+                clicked_btn = true;
+                show_confirm_new_window = false;
+                modified = false;
+                HandleNewConfig();
+            }
+            ImGui::EndPopup();
+        }
+
+        // Just closed
+        if (!show_confirm_new_window && !clicked_btn) {
+            modified = false;
+            HandleNewConfig();
+        }
+    }
+
+    prev_show = show_confirm_new_window;
+}
+
+static void DrawCredits()
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.5f, 0.5f, 0.5f, 1.0f });
+    DrawSpacing(0, 12);
+    ImGui::Text("Quake 1 Compile GUI (%s)", APP_VERSION);
+    ImGui::PopStyleColor();
 }
 
 static void DrawMainContent()
 {
-    DrawTextInput("Config Name: ", current_config.config_name, 5);
+    if (DrawTextInput("Config Name: ", current_config.config_name, 5)) modified = true;
 
     DrawSeparator(5);
 
-    DrawFileInput("Tools Dir: ",  PATH_TOOLS_DIR,  20);
-    DrawFileInput("Work Dir: ",   PATH_WORK_DIR,   27);
-    DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f);
-    DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f);
-    DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f);
+    if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20)) modified = true;
+    if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27)) modified = true;
+    if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f)) modified = true;
+    if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f)) modified = true;
+    if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f)) modified = true;
 
     DrawSeparator(5);
 
-    bool watch_map_file = current_config.flags & CONFIG_FLAG_WATCH_MAP_FILE;
-    if (ImGui::Checkbox("Watch map file for changes and pre-compile", &watch_map_file)) {
-        if (watch_map_file) {
-            current_config.flags |= CONFIG_FLAG_WATCH_MAP_FILE;
-        }
-        else {
-            current_config.flags = current_config.flags & ~CONFIG_FLAG_WATCH_MAP_FILE;
-        }
-
-        map_file_watcher->SetEnabled(watch_map_file);
+    if (ImGui::Checkbox("Watch map file for changes and pre-compile", &current_config.watch_map_file)) {
+        modified = true;
+        map_file_watcher->SetEnabled(current_config.watch_map_file);
     }
 
     DrawSeparator(5);
 
-    DrawToolParams("QBSP",  CONFIG_FLAG_QBSP_ENABLED, current_config.qbsp_args, 45);
-    DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, current_config.light_args, 38);
-    DrawToolParams("VIS",   CONFIG_FLAG_VIS_ENABLED, current_config.vis_args, 52);
-    DrawToolParams("QUAKE", 0, current_config.quake_args, 38);
+    DrawPresetCombo();
+
+    if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, current_config.qbsp_args, 45)) {
+        modified = true;
+        modified_flags = true;
+    }
+    if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, current_config.light_args, 38)) {
+        modified = true;
+        modified_flags = true;
+    }
+    if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, current_config.vis_args, 52)) {
+        modified = true;
+        modified_flags = true;
+    }
+    if (DrawToolParams("QUAKE", 0, current_config.quake_args, 38)) {
+        modified = true;
+    }
 
     DrawSeparator(5);
 
@@ -624,12 +1171,19 @@ static void DrawMainContent()
 
     DrawConsoleView();
 
+    DrawCredits();
+
+    DrawPresetWindow();
+
+    DrawConfirmNewWindow();
+
     fb->Display();
     if (fb->HasSelected()) {
         HandleFileBrowserCallback();
         fb->Close();
     }
     else if (fb->HasRequestedCancel()) {
+        HandleFileBrowserCancel();
         fb->Close();
     }
 }
@@ -647,9 +1201,9 @@ static void DrawMainWindow()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
 
     ImGui::SetNextWindowPos(ImVec2{ 0, 18 }, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{ WINDOW_WIDTH, WINDOW_HEIGHT }, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{ (float)window_width, (float)window_height }, ImGuiCond_Always);
     if (ImGui::Begin("##main", nullptr, flags)) {
-        if (ImGui::BeginChild("##content", ImVec2{ 996, 740 } )) {
+        if (ImGui::BeginChild("##content", ImVec2{ (float)window_width - 28, (float)window_height - 28 } )) {
             DrawMainContent();
         }
         ImGui::EndChild();
@@ -669,6 +1223,8 @@ Application lifetime functions
 
 void qc_init()
 {    
+    app_running = true;
+
     ClearConsole();
     SetErrorLogFile("q1compile_err.log");
     PrintError("Test\n");
@@ -679,9 +1235,12 @@ void qc_init()
     compile_status = "Doing nothing.";
 
     user_config = ReadUserConfig();
+    for (auto& preset : user_config.tool_presets) {
+        while (StrReplace(preset.name, "(built-in)", "")) {}
+    }
+    AddBuiltinPresets();
     if (!user_config.loaded_config.empty()) {
-        current_config = ReadConfig(user_config.loaded_config);
-        map_file_watcher->SetPath(current_config.config_paths[PATH_MAP_SOURCE]);
+        LoadConfig(user_config.loaded_config);
     }
 
     PrintReadme();
@@ -728,10 +1287,26 @@ void qc_key_down(unsigned int key)
             }
         }
         break;
+    case 'P':
+        if (io.KeyCtrl) {
+            show_preset_window = true;
+        }
+        break;
+    case 'Q':
+        if (io.KeyCtrl) {
+            app_running = false;
+        }
+        break;
     }
 }
 
-void qc_render()
+void qc_resize(unsigned int width, unsigned int height)
+{
+    window_width = width;
+    window_height = height - 18;
+}
+
+bool qc_render()
 {
     float dt = ImGui::GetIO().DeltaTime;
     if (map_file_watcher->Update(dt)) {
@@ -742,10 +1317,16 @@ void qc_render()
         char c = compile_output.pop();
         Print(c);
     }
+
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.9f, 0.9f, 0.9f, 1.0f });
     DrawMenuBar();
     DrawMainWindow();
+    ImGui::PopStyleColor(1);
+
+    return app_running;
 }
 
 void qc_deinit()
 {
+    WriteUserConfig(user_config);
 }

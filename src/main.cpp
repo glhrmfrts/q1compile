@@ -113,7 +113,9 @@ int WinMain(
             ImGui::ShowDemoWindow(&show_demo_window);
         */
 
-        qc_render();
+        if (!qc_render()) {
+            PostQuitMessage(0);
+        }
 
         // Rendering
         ImGui::Render();
@@ -209,6 +211,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             CleanupRenderTarget();
             g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
             CreateRenderTarget();
+
+            qc_resize((UINT)LOWORD(lParam), (UINT)HIWORD(lParam));
         }
         return 0;
     case WM_SYSCOMMAND:
