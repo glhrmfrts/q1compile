@@ -362,14 +362,22 @@ static void SaveConfig(const std::string& path)
     Print("\n");
 }
 
-static void LoadConfig(const std::string& path)
+static bool LoadConfig(const std::string& path)
 {
+    if (!PathExists(path)) {
+        console_auto_scroll = true;
+        PrintError("File not found: ");
+        PrintError(path.c_str());
+        PrintError("\n");
+        return false;
+    }
+
     if (!IsExtension(path, ".cfg")) {
         console_auto_scroll = true;
         PrintError("Invalid config file: ");
         PrintError(path.c_str());
         PrintError("\n");
-        return;
+        return false;
     }
 
     current_config = ReadConfig(path);
@@ -391,6 +399,7 @@ static void LoadConfig(const std::string& path)
     Print("Loaded config: ");
     Print(path.c_str());
     Print("\n");
+    return true;
 }
 
 static void CopyPreset(const ToolPreset& preset)
@@ -453,8 +462,8 @@ static void HandleLoadConfig()
 static void HandleLoadRecentConfig(int i)
 {
     const std::string& path = user_config.recent_configs[i];
-    if (PathExists(path)) {
-        LoadConfig(path);
+    if (!LoadConfig(path)) {
+        user_config.recent_configs.erase(user_config.recent_configs.begin() + i);
     }
 }
 
@@ -522,6 +531,8 @@ static void HandlePathSelect(ConfigPath path)
 
     if (should_be_dir)
         fb->SetFlags(ImGuiFileBrowserFlags_SelectDirectory | ImGuiFileBrowserFlags_CreateNewDir);
+    else
+        fb->SetFlags(0);
 
     fb->SetTitle(config_paths_title[path]);
     fb->Open();
@@ -1258,7 +1269,9 @@ void qc_init()
     }
     AddBuiltinPresets();
     if (!user_config.loaded_config.empty()) {
-        LoadConfig(user_config.loaded_config);
+        if (!LoadConfig(user_config.loaded_config)) {
+            user_config.loaded_config = "";
+        }
     }
 
     PrintReadme();

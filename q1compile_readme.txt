@@ -1,4 +1,4 @@
-q1compile v0.2
+q1compile v0.2.1
 =================
 
 A GUI to work with Quake map compiling tools
@@ -12,6 +12,12 @@ Work Dir       - Temporary dir to work with files
 Output Dir     - Where the compiled .bsp and .lit files will be
 Engine Exe     - The Quake engine executable of your choice
 Map Source     - The .map file to compile
+
+
+Changes - v0.2.1
+=================
+
+- Bugfix: Reset file browser flags when selecting Engine and Map Source paths
 
 
 Changes - v0.2
@@ -45,4 +51,4 @@ MIT
 Authors
 =================
 
-Guilherme Nemeth - guilherme.nemeth@gmail.com - @nemethg on Quake Mapping's discord server
+Guilherme Nemeth - guilherme.nemeth@gmail.com - @nemethg on Quake Mapping discord server
