@@ -1,6 +1,6 @@
 #pragma once
 
-void qc_init();
+void qc_init(void* platform_data);
 
 void qc_key_down(unsigned int key);
 

@@ -1,5 +1,8 @@
 #include <chrono>
 #include <memory>
+#include <Windows.h>
+#include <commdlg.h>
+#include <shlobj.h>
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <imfilebrowser.h>
@@ -14,6 +17,14 @@
 #include "work_queue.h"
 
 #define CONFIG_RECENT_COUNT 5
+
+typedef int FileBrowserFlags;
+
+enum FileBrowserFlag {
+    FB_FLAG_LOAD = 0x1,
+    FB_FLAG_SAVE = 0x2,
+    FB_FLAG_MUST_EXIST = 0x4,
+};
 
 enum FileBrowserCallback {
     FB_LOAD_CONFIG,
@@ -37,7 +48,8 @@ static std::string                  compile_status;
 static bool                         last_job_ran_quake;
 
 static FileBrowserCallback                  fb_callback;
-static std::unique_ptr<ImGui::FileBrowser>  fb;
+static std::string                          fb_path;
+//static std::unique_ptr<ImGui::FileBrowser>  fb;
 
 static std::unique_ptr<FileWatcher> map_file_watcher;
 
@@ -53,6 +65,8 @@ static int preset_to_export;
 static int window_width = WINDOW_WIDTH;
 static int window_height = WINDOW_HEIGHT;
 static bool app_running;
+
+static void* platform_data;
 
 static std::vector<ToolPreset> builtin_presets = {
     ToolPreset{
@@ -97,7 +111,17 @@ static std::vector<std::string> config_paths_title = {
     "Select Map Source"
 };
 
+static std::vector<const char*> config_paths_filter = {
+    NULL,
+    NULL,
+    NULL,
+    "Executable Files (*.exe)\0*.exe\0",
+    "Map Source Files (*.map)\0*.map\0"
+};
+
 static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd);
+
+static void HandleFileBrowserCallback();
 
 
 /*
@@ -144,21 +168,21 @@ struct CompileJob
             }
         } };
 
-        compile_output.append("Starting to compile: ");
+        compile_output.append("Starting to compile:");
         if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED)
-            compile_output.append(" qbsp=true ");
+            compile_output.append(" qbsp=true");
         else
-            compile_output.append(" qbsp=false ");
+            compile_output.append(" qbsp=false");
 
         if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED)
-            compile_output.append(" light=true ");
+            compile_output.append(" light=true");
         else
-            compile_output.append(" light=false ");
+            compile_output.append(" light=false");
 
         if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED)
-            compile_output.append(" vis=true ");
+            compile_output.append(" vis=true");
         else
-            compile_output.append(" vis=false ");
+            compile_output.append(" vis=false");
 
         compile_output.append("\n");
 
@@ -521,6 +545,101 @@ static bool ShouldConfigPathBeDirectory(ConfigPath path)
     return (path == PATH_TOOLS_DIR) || (path == PATH_WORK_DIR) || (path == PATH_OUTPUT_DIR);
 }
 
+static int CALLBACK BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
+{
+
+    if (uMsg == BFFM_INITIALIZED)
+    {
+        std::string tmp = (const char*)lpData;
+        //std::cout << "path: " << tmp << std::endl;
+        SendMessage(hwnd, BFFM_SETSELECTION, TRUE, lpData);
+    }
+
+    return 0;
+}
+
+bool SelectDirDialog(std::string& out)
+{
+    TCHAR path[MAX_PATH];
+
+    out = PathToNative(out);
+
+    const char* path_param = out.c_str();
+
+    BROWSEINFO bi = { 0 };
+    bi.lpszTitle = ("Browse for folder...");
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    bi.lpfn = BrowseCallbackProc;
+    bi.lParam = (LPARAM)path_param;
+
+    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+
+    if (pidl != 0)
+    {
+        //get the name of the folder and put it in path
+        SHGetPathFromIDList(pidl, path);
+
+        //free memory used
+        IMalloc* imalloc = 0;
+        if (SUCCEEDED(SHGetMalloc(&imalloc)))
+        {
+            imalloc->Free(pidl);
+            imalloc->Release();
+        }
+
+        out = path;
+        return true;
+    }
+
+    return false;
+}
+
+bool SelectFileDialog(const char* filter, FileBrowserFlags flags, std::string& out)
+{
+    char buf[256];
+
+    out = PathToNative(out);
+
+    // Set suggested path to save the new file
+    std::memcpy(buf, out.c_str(), out.size() + 1);
+
+    OPENFILENAME s;
+    ZeroMemory(&s, sizeof(OPENFILENAME));
+    s.lStructSize = sizeof(OPENFILENAME);
+    s.hwndOwner = (HWND)platform_data;
+    s.lpstrFilter = filter;
+    s.lpstrFile = buf;
+    s.nMaxFile = sizeof(buf);
+
+    if (flags & FB_FLAG_MUST_EXIST) {
+       s.Flags = OFN_FILEMUSTEXIST;
+       s.lpstrInitialDir = out.c_str();
+       ZeroMemory(buf, sizeof(buf));
+    }
+
+    bool ok = false;
+    if (flags & FB_FLAG_LOAD) {
+        ok = GetOpenFileName(&s);
+    }
+    else if (flags & FB_FLAG_SAVE) {
+        ok = GetSaveFileName(&s);
+    }
+
+    if (ok) {
+        std::string user_path = std::string{ s.lpstrFile, strlen(s.lpstrFile) };
+        out = PathFromNative(user_path);
+        return true;
+    }
+
+    DWORD err = CommDlgExtendedError();
+    if (err) {
+        PrintError("CommDlg Error: ");
+        PrintValueError(err);
+        PrintError("\n");
+    }
+    return false;
+}
+
 /*
 ===================
 UI Event Handlers
@@ -543,11 +662,15 @@ static void HandleNewConfig()
 
 static void HandleLoadConfig()
 {
-    fb_callback = FB_LOAD_CONFIG;
-    fb->SetTitle("Load Config");
-    fb->SetFlags(0);
-    fb->SetPwd(PathDirectory(user_config.loaded_config));
-    fb->Open();
+    std::string pwd = PathDirectory(user_config.loaded_config);
+    std::string user_path = pwd;
+    FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
+
+    if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
+        fb_callback = FB_LOAD_CONFIG;
+        fb_path = user_path;
+        HandleFileBrowserCallback();
+    }
 }
 
 static void HandleLoadRecentConfig(int i)
@@ -560,11 +683,17 @@ static void HandleLoadRecentConfig(int i)
 
 static void HandleSaveConfigAs()
 {
-    fb_callback = FB_SAVE_CONFIG;
-    fb->SetTitle("Save Config As...");
-    fb->SetFlags(ImGuiFileBrowserFlags_EnterNewFilename);
-    fb->SetPwd(PathDirectory(user_config.loaded_config));
-    fb->Open();
+    std::string pwd = PathDirectory(user_config.loaded_config);
+    std::string filename = current_config.config_name + ".cfg";
+    std::string path = PathJoin(pwd, filename);
+    std::string user_path = path;
+    FileBrowserFlag flags = FB_FLAG_SAVE;
+
+    if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
+        fb_callback = FB_SAVE_CONFIG;
+        fb_path = user_path;
+        HandleFileBrowserCallback();
+    }
 }
 
 static void HandleSaveConfig()
@@ -618,29 +747,31 @@ static void HandleToolHelp(int tool_flag)
 
 static void HandlePathSelect(ConfigPath path)
 {
-    fb_callback = (FileBrowserCallback)(FB_CONFIG_STR + path);
     bool should_be_dir = ShouldConfigPathBeDirectory(path);
     std::string pwd = PathFromNative(current_config.config_paths[path]);
+    std::string user_path = pwd;
+    FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
-    if (should_be_dir && PathIsDirectory(pwd))
-        fb->SetPwd(pwd);
-    else
-        fb->SetPwd(PathDirectory(pwd));
+    bool ok = false;
+    if (should_be_dir) {
+        ok = SelectDirDialog(user_path);
+    }
+    else {
+        ok = SelectFileDialog(config_paths_filter[path], flags, user_path);
+    }
 
-    if (should_be_dir)
-        fb->SetFlags(ImGuiFileBrowserFlags_SelectDirectory | ImGuiFileBrowserFlags_CreateNewDir);
-    else
-        fb->SetFlags(0);
-
-    fb->SetTitle(config_paths_title[path]);
-    fb->Open();
+    if (ok) {
+        fb_callback = (FileBrowserCallback)(FB_CONFIG_STR + path);
+        fb_path = user_path;
+        HandleFileBrowserCallback();
+    }
 }
 
 static void HandleFileBrowserCallback()
 {
     switch (fb_callback) {
     case FB_LOAD_CONFIG: {
-        std::string path = PathFromNative(fb->GetSelected().string());
+        std::string path = PathFromNative(fb_path);
         if (!IsExtension(path, ".cfg")) {
             console_auto_scroll = true;
             PrintError("Invalid config file: ");
@@ -658,7 +789,7 @@ static void HandleFileBrowserCallback()
     } break;
 
     case FB_SAVE_CONFIG: {
-        std::string path = PathFromNative(fb->GetSelected().string());
+        std::string path = PathFromNative(fb_path);
         AddExtensionIfNone(path, ".cfg");
 
         if (path != user_config.loaded_config) {
@@ -668,7 +799,7 @@ static void HandleFileBrowserCallback()
     } break;
 
     case FB_IMPORT_PRESET: {
-        std::string path = PathFromNative(fb->GetSelected().string());
+        std::string path = PathFromNative(fb_path);
         if (!IsExtension(path, ".pre")) {
             console_auto_scroll = true;
             PrintError("Invalid preset file: ");
@@ -703,7 +834,7 @@ static void HandleFileBrowserCallback()
     } break;
 
     case FB_EXPORT_PRESET: {
-        std::string path = PathFromNative(fb->GetSelected().string());
+        std::string path = PathFromNative(fb_path);
         AddExtensionIfNone(path, ".pre");
 
         auto exp_preset = user_config.tool_presets[preset_to_export];
@@ -725,7 +856,7 @@ static void HandleFileBrowserCallback()
         if (fb_callback >= FB_CONFIG_STR)
             SetConfigPath(
                 (ConfigPath)(fb_callback - FB_CONFIG_STR),
-                PathFromNative(fb->GetSelected().string())
+                PathFromNative(fb_path)
             );
         break;
     }
@@ -758,31 +889,31 @@ static void HandleSelectPreset(int i)
 
 static void HandleImportPreset()
 {
-    fb_callback = FB_IMPORT_PRESET;
-    if (!user_config.last_import_preset_location.empty()) {
-        fb->SetPwd(PathFromNative(user_config.last_import_preset_location));
+    std::string pwd = user_config.last_import_preset_location;
+    std::string user_path = pwd;
+    FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
+
+    if (SelectFileDialog("Preset File (*.pre)\0*.pre\0", flags, user_path)) {
+        fb_callback = FB_IMPORT_PRESET;
+        fb_path = user_path;
+        HandleFileBrowserCallback();
     }
-    else {
-        fb->SetPwd();
-    }
-    fb->SetTitle("Import Tool Preset");
-    fb->SetFlags(0);
-    fb->Open();
 }
 
 static void HandleExportPreset(int real_index)
 {
-    preset_to_export = real_index;
-    fb_callback = FB_EXPORT_PRESET;
-    if (!user_config.last_export_preset_location.empty()) {
-        fb->SetPwd(PathFromNative(user_config.last_export_preset_location));
+    std::string pwd = user_config.last_export_preset_location;
+    std::string filename = user_config.tool_presets[real_index].name + ".pre";
+    std::string path = PathJoin(pwd, filename);
+    std::string user_path = path;
+    FileBrowserFlags flags = FB_FLAG_SAVE;
+
+    if (SelectFileDialog("Preset File (*.pre)\0*.pre\0", flags, user_path)) {
+        preset_to_export = real_index;
+        fb_callback = FB_EXPORT_PRESET;
+        fb_path = user_path;
+        HandleFileBrowserCallback();
     }
-    else {
-        fb->SetPwd();
-    }
-    fb->SetTitle("Export Tool Preset");
-    fb->SetFlags(ImGuiFileBrowserFlags_EnterNewFilename);
-    fb->Open();
 }
 
 static void HandleClearWorkingFiles()
@@ -1180,8 +1311,6 @@ static void DrawPresetWindow()
             }
             ImGui::SameLine();
             if (ImGui::Button("Import Preset")) {
-                ImGui::CloseCurrentPopup();
-                show_preset_window = false;
                 HandleImportPreset();
             }
 
@@ -1220,8 +1349,6 @@ static void DrawPresetWindow()
                                 HandleSelectPreset(i + 1);
                             }
                             if (ImGui::Selectable("Export")) {
-                                ImGui::CloseCurrentPopup();
-                                show_preset_window = false;
                                 HandleExportPreset(i);
                             }
                             if (!preset.builtin) {
@@ -1403,16 +1530,6 @@ static void DrawMainContent()
     DrawPresetWindow();
 
     DrawConfirmNewWindow();
-
-    fb->Display();
-    if (fb->HasSelected()) {
-        HandleFileBrowserCallback();
-        fb->Close();
-    }
-    else if (fb->HasRequestedCancel()) {
-        HandleFileBrowserCancel();
-        fb->Close();
-    }
 }
 
 static void DrawMainWindow()
@@ -1447,8 +1564,9 @@ Application lifetime functions
 ====================
 */
 
-void qc_init()
+void qc_init(void* pdata)
 {    
+    platform_data = pdata;
     app_running = true;
 
     ClearConsole();
@@ -1456,7 +1574,7 @@ void qc_init()
 
     map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
     compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
-    fb = std::make_unique<ImGui::FileBrowser>();
+    //fb = std::make_unique<ImGui::FileBrowser>();
     compile_status = "Doing nothing.";
 
     user_config = ReadUserConfig();

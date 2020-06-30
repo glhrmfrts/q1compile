@@ -1,4 +1,5 @@
 #include <shlobj.h>
+#include <commdlg.h>
 #include <io.h>
 #include <cassert>
 #include <iostream>
@@ -46,7 +47,7 @@ std::string PathFromNative(std::string path)
 std::string PathToNative(std::string path)
 {
 #ifdef _WIN32
-    StrReplace(path, "/", "\\");
+    while (StrReplace(path, "/", "\\")) {}
 #endif
     return path;
 }
