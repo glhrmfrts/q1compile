@@ -587,7 +587,7 @@ bool SelectDirDialog(std::string& out)
             imalloc->Release();
         }
 
-        out = path;
+        out = PathFromNative(path);
         return true;
     }
 
