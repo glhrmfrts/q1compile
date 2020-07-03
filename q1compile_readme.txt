@@ -30,6 +30,13 @@ Issue Tracker
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues
 
 
+Changes - v0.3.1
+=================
+
+- Added application icon.
+- Using standard Windows file dialogs.
+
+
 Changes - v0.3
 =================
 
@@ -65,7 +72,6 @@ License
 =================
 
 MIT
-
 
 Authors
 =================

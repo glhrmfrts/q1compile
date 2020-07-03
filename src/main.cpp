@@ -10,6 +10,7 @@
 #include <tchar.h>
 #include "common.h"
 #include "q1compile.h"
+#include "../build/src/resource.h"
 
 // Data
 static ID3D11Device*            g_pd3dDevice = NULL;
@@ -33,6 +34,8 @@ int WinMain(
 ) {
     // Create application window
     WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
+    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
+
     ::RegisterClassEx(&wc);
     HWND hwnd = ::CreateWindow(wc.lpszClassName, _T(APP_NAME), WS_OVERLAPPEDWINDOW, 100, 100, WINDOW_WIDTH, WINDOW_HEIGHT, NULL, NULL, wc.hInstance, NULL);
 
