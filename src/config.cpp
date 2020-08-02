@@ -129,6 +129,13 @@ static void ParseConfigFile(const std::string& path, ConfigVarHandler var_handle
     }
 }
 
+static std::string GetUserConfigPath()
+{
+    auto dirname = qc_GetAppDir();
+    auto username = qc_GetUserName();
+    return PathJoin(dirname, "q1compile_userprefs-"+ username +".cfg");
+}
+
 static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
 {
     bool b = false;
@@ -159,6 +166,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     }
     else if (name == "watch_map_file") {
         p.ParseBool(config.watch_map_file);
+    }
+    else if (name == "quake_output_enabled") {
+        p.ParseBool(config.quake_output_enabled);
     }
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
@@ -265,6 +275,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "light_enabled", 0 != (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED));
     WriteVar(fh, "vis_enabled", 0 != (config.tool_flags & CONFIG_FLAG_VIS_ENABLED));
     WriteVar(fh, "watch_map_file", config.watch_map_file);
+    WriteVar(fh, "quake_output_enabled", config.quake_output_enabled);
     WriteVar(fh, "selected_preset", config.selected_preset);
 }
 
@@ -274,6 +285,10 @@ Config ReadConfig(const std::string& path)
         return {};
 
     Config config = {};
+
+    // set defaults
+    config.quake_output_enabled = true;
+
     ParseConfigFile(path, [&config](std::string name, ConfigLineParser& p) {
         SetConfigVar(config, name, p);
     });
@@ -282,7 +297,7 @@ Config ReadConfig(const std::string& path)
 
 void WriteUserConfig(const UserConfig& config)
 {
-    std::string path = PathJoin(ConfigurationDir(APP_NAME), "config.cfg");
+    std::string path = GetUserConfigPath();
     std::ofstream fh{ path };
 
     WriteVar(fh, "loaded_config", config.loaded_config);
@@ -301,7 +316,12 @@ void WriteUserConfig(const UserConfig& config)
 
 UserConfig ReadUserConfig()
 {
-    std::string path = PathJoin(ConfigurationDir(APP_NAME), "config.cfg");
+    std::string path = GetUserConfigPath();
+    std::string oldpath = PathJoin(ConfigurationDir(APP_NAME), "config.cfg");
+
+    if (!PathExists(path))
+        path = oldpath;
+    
     if (!PathExists(path))
         return {};
 
@@ -355,4 +375,12 @@ ToolPreset ReadToolPreset(const std::string& path)
         }
     });
     return preset;
+}
+
+void MigrateUserConfig(const UserConfig& cfg)
+{
+    if (!PathExists(GetUserConfigPath())) {
+        // write the user config to the new path already
+        WriteUserConfig(cfg);
+    }
 }

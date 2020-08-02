@@ -2,6 +2,10 @@
 
 #include <string>
 
+std::string qc_GetAppDir();
+
+std::string qc_GetUserName();
+
 std::string PathFromNative(std::string path);
 
 std::string PathToNative(std::string path);

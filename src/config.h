@@ -32,6 +32,7 @@ struct Config
     std::string selected_preset;
 
     bool watch_map_file;
+    bool quake_output_enabled;
     int tool_flags;
 
     // Runtime only
@@ -69,3 +70,5 @@ UserConfig ReadUserConfig();
 void WriteToolPreset(const ToolPreset& preset, const std::string& path);
 
 ToolPreset ReadToolPreset(const std::string& path);
+
+void MigrateUserConfig(const UserConfig& cfg);

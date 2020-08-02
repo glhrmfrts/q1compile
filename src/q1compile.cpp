@@ -15,6 +15,7 @@
 #include "sub_process.h"
 #include "shell_command.h"
 #include "work_queue.h"
+#include "../include/imgui_markdown.h" // https://github.com/juliettef/imgui_markdown/
 
 #define CONFIG_RECENT_COUNT 5
 
@@ -60,6 +61,7 @@ static bool modified;
 static bool modified_flags;
 static bool show_preset_window;
 static bool show_confirm_new_window;
+static bool show_help_window;
 static int preset_to_export;
 
 static int window_width = WINDOW_WIDTH;
@@ -119,7 +121,7 @@ static std::vector<const char*> config_paths_filter = {
     "Map Source Files (*.map)\0*.map\0"
 };
 
-static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd);
+static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output = false);
 
 static void HandleFileBrowserCallback();
 
@@ -306,7 +308,7 @@ struct CompileJob
             cmd.append(" ");
             cmd.append(args);
 
-            ExecuteCompileProcess(cmd, pwd);
+            ExecuteCompileProcess(cmd, pwd, !config.quake_output_enabled);
         }
     }
 };
@@ -345,16 +347,20 @@ struct HelpJob
 };
 
 template<class T>
-static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, MutexCharBuffer& out)
+static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, MutexCharBuffer* out)
 {
     char c;
     while (obj.ReadChar(c)) {
-        out.push(c);
-        if (stop && *stop) return;
+        if (out) {
+            out->push(c);
+        }
+        if (stop && *stop) {
+            return;
+        }
     }
 }
 
-static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd)
+static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output)
 {
     SubProcess proc{ cmd, pwd };
     if (!proc.Good()) {
@@ -363,13 +369,17 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
         return;
     }
 
-    ReadToMutexCharBuffer(proc, &stop_compiling, compile_output);
+    auto output = &compile_output;
+    if (suppress_output) {
+        output = nullptr;
+    }
+    ReadToMutexCharBuffer(proc, &stop_compiling, output);
 }
 
 static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
 {
     ShellCommand proc{ cmd, pwd };
-    ReadToMutexCharBuffer(proc, nullptr, compile_output);
+    ReadToMutexCharBuffer(proc, nullptr, &compile_output);
 }
 
 static void StartCompileJob(const Config& cfg, bool run_quake)
@@ -960,18 +970,15 @@ static void HandleClearOutputFiles()
     }
 }
 
-static void PrintReadme()
+static std::string GetReadmeText()
 {
     static std::string readme;
 
     if (readme.empty()) {
-        if (!ReadFileText("q1compile_readme.txt", readme)) return;
+        if (!ReadFileText("q1compile_readme.txt", readme)) return "";
     }
 
-    console_auto_scroll = false;
-
-    ClearConsole();
-    Print(readme.c_str());
+    return readme;
 }
 
 /*
@@ -1065,7 +1072,7 @@ static void DrawMenuBar()
 
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About", "", nullptr)) {
-                PrintReadme();
+                show_help_window = true;
             }
             ImGui::EndMenu();
         }
@@ -1449,6 +1456,30 @@ static void DrawCredits()
     ImGui::PopStyleColor();
 }
 
+static void DrawHelpWindow()
+{
+    static bool prev_show;
+    static ImGui::MarkdownConfig mdConfig = {};
+
+    if (show_help_window) {
+        if (!prev_show) {
+            ImGui::OpenPopup("About");
+        }
+
+        bool clicked_btn = false;
+        ImGuiWindowFlags flags = 0;
+        ImGui::SetNextWindowSize(ImVec2{ window_width * 0.75f, window_height * 0.75f }, ImGuiCond_Always);
+        //ImGui::SetNextWindowPosCenter(ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("About", &show_help_window, flags)) {
+            auto readmeText = GetReadmeText();
+            ImGui::Markdown( readmeText.c_str(), readmeText.length(), mdConfig );
+            ImGui::EndPopup();
+        }
+    }
+
+    prev_show = show_help_window;
+}
+
 static void DrawMainContent()
 {
     ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
@@ -1513,6 +1544,8 @@ static void DrawMainContent()
             map_file_watcher->SetEnabled(current_config.watch_map_file);
         }
 
+        ImGui::Checkbox("Quake console output enabled", &current_config.quake_output_enabled);
+
         ImGui::TreePop();
     }
 
@@ -1528,6 +1561,8 @@ static void DrawMainContent()
     DrawCredits();
 
     DrawPresetWindow();
+
+    DrawHelpWindow();
 
     DrawConfirmNewWindow();
 }
@@ -1578,6 +1613,11 @@ void qc_init(void* pdata)
     compile_status = "Doing nothing.";
 
     user_config = ReadUserConfig();
+    MigrateUserConfig(user_config);
+    if (user_config.loaded_config.empty()) {
+        show_help_window = true;
+    }
+
     for (auto& preset : user_config.tool_presets) {
         while (StrReplace(preset.name, "(built-in)", "")) {}
     }
@@ -1587,8 +1627,6 @@ void qc_init(void* pdata)
             user_config.loaded_config = "";
         }
     }
-
-    PrintReadme();
 }
 
 void qc_key_down(unsigned int key)

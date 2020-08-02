@@ -1,5 +1,6 @@
 #include <shlobj.h>
 #include <commdlg.h>
+#include <Lmcons.h>
 #include <io.h>
 #include <cassert>
 #include <iostream>
@@ -34,6 +35,22 @@ std::wstring Widen(const std::string& text)
 std::string Narrow(const std::wstring& text)
 {
     return Narrow(text.data(), text.size());
+}
+
+std::string qc_GetAppDir()
+{
+    wchar_t dirname[UNLEN+1];
+    DWORD dirname_len = UNLEN+1;
+    dirname_len = GetModuleFileNameW(GetModuleHandle(NULL), dirname, dirname_len);
+    return PathDirectory(PathFromNative(Narrow(dirname, dirname_len)));
+}
+
+std::string qc_GetUserName()
+{
+    wchar_t username[UNLEN+1];
+    DWORD username_len = UNLEN+1;
+    GetUserNameW(username, &username_len);
+    return Narrow(username, username_len - 1);
 }
 
 std::string PathFromNative(std::string path)
