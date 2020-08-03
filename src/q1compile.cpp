@@ -37,40 +37,44 @@ enum FileBrowserCallback {
 
 static const ImVec4 INPUT_TEXT_READ_ONLY_COLOR{ 0.15f, 0.15f, 0.195f, 1.0f };
 
-static Config                       current_config;
-static UserConfig                   user_config;
-static std::string                  last_loaded_config_name;
+struct AppState {
+    Config                       current_config;
+    UserConfig                   user_config;
+    std::string                  last_loaded_config_name;
 
-static std::unique_ptr<WorkQueue>   compile_queue;
-static MutexCharBuffer              compile_output;
-static std::atomic_bool             compiling;
-static std::atomic_bool             stop_compiling;
-static std::string                  compile_status;
-static bool                         last_job_ran_quake;
+    std::unique_ptr<WorkQueue>   compile_queue;
+    MutexCharBuffer              compile_output;
+    std::atomic_bool             compiling;
+    std::atomic_bool             stop_compiling;
+    std::string                  compile_status;
+    bool                         last_job_ran_quake;
 
-static FileBrowserCallback                  fb_callback;
-static std::string                          fb_path;
-//static std::unique_ptr<ImGui::FileBrowser>  fb;
+    FileBrowserCallback          fb_callback;
+    std::string                  fb_path;
 
-static std::unique_ptr<FileWatcher> map_file_watcher;
+    //std::unique_ptr<MapFile>     map_file;
+    std::unique_ptr<FileWatcher> map_file_watcher;
 
-static std::atomic_bool console_auto_scroll = true;
-static std::atomic_bool console_lock_scroll = false;
+    std::atomic_bool             console_auto_scroll = true;
+    std::atomic_bool             console_lock_scroll = false;
 
-static bool modified;
-static bool modified_flags;
-static bool show_preset_window;
-static bool show_confirm_new_window;
-static bool show_help_window;
-static int preset_to_export;
+    bool modified = false;
+    bool modified_flags = false;
+    bool show_preset_window = false;
+    bool show_confirm_new_window = false;
+    bool show_help_window = false;
+    int preset_to_export = 0;
 
-static int window_width = WINDOW_WIDTH;
-static int window_height = WINDOW_HEIGHT;
-static bool app_running;
+    int window_width = WINDOW_WIDTH;
+    int window_height = WINDOW_HEIGHT;
+    bool app_running = false;
 
-static void* platform_data;
+    void* platform_data = NULL;
+};
 
-static std::vector<ToolPreset> builtin_presets = {
+static AppState g_app;
+
+static std::vector<ToolPreset> g_builtin_presets = {
     ToolPreset{
         "No Vis (built-in)",
         "",
@@ -105,7 +109,7 @@ static std::vector<ToolPreset> builtin_presets = {
     },
 };
 
-static std::vector<std::string> config_paths_title = {
+static std::vector<std::string> g_config_paths_title = {
     "Select Tools Dir",
     "Select Work Dir",
     "Select Output Dir",
@@ -113,7 +117,7 @@ static std::vector<std::string> config_paths_title = {
     "Select Map Source"
 };
 
-static std::vector<const char*> config_paths_filter = {
+static std::vector<const char*> g_config_paths_filter = {
     NULL,
     NULL,
     NULL,
@@ -146,7 +150,7 @@ struct CompileJob
             return false;
         }
 
-        compile_status = exe + " " + args;
+        g_app.compile_status = exe + " " + args;
 
         cmd.append(" ");
         cmd.append(args);
@@ -158,35 +162,35 @@ struct CompileJob
     {
         auto time_begin = std::chrono::system_clock::now();
         
-        compiling = true;
-        compile_status = "Copying source file to work dir...";
+        g_app.compiling = true;
+        g_app.compile_status = "Copying source file to work dir...";
         ScopeGuard end{ []() {
-            compiling = false;
-            stop_compiling = false;
-            console_lock_scroll = false;
+            g_app.compiling = false;
+            g_app.stop_compiling = false;
+            g_app.console_lock_scroll = false;
 
-            if (compile_status.find("Finished") == std::string::npos) {
-                compile_status = "Stopped.";
+            if (g_app.compile_status.find("Finished") == std::string::npos) {
+                g_app.compile_status = "Stopped.";
             }
         } };
 
-        compile_output.append("Starting to compile:");
+        g_app.compile_output.append("Starting to compile:");
         if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED)
-            compile_output.append(" qbsp=true");
+            g_app.compile_output.append(" qbsp=true");
         else
-            compile_output.append(" qbsp=false");
+            g_app.compile_output.append(" qbsp=false");
 
         if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED)
-            compile_output.append(" light=true");
+            g_app.compile_output.append(" light=true");
         else
-            compile_output.append(" light=false");
+            g_app.compile_output.append(" light=false");
 
         if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED)
-            compile_output.append(" vis=true");
+            g_app.compile_output.append(" vis=true");
         else
-            compile_output.append(" vis=false");
+            g_app.compile_output.append(" vis=false");
 
-        compile_output.append("\n");
+        g_app.compile_output.append("\n");
 
         std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
         std::string work_map = PathJoin(PathFromNative(config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
@@ -199,20 +203,20 @@ struct CompileJob
         StrReplace(work_lit, ".map", ".lit");
 
         if (Copy(source_map, work_map)) {
-            compile_output.append("Copied ");
-            compile_output.append(source_map);
-            compile_output.append(" to ");
-            compile_output.append(work_map);
-            compile_output.append("\n");
+            g_app.compile_output.append("Copied ");
+            g_app.compile_output.append(source_map);
+            g_app.compile_output.append(" to ");
+            g_app.compile_output.append(work_map);
+            g_app.compile_output.append("\n");
         }
         else {
             return;
         }
 
-        if (stop_compiling) return;
+        if (g_app.stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED) {
-            compile_output.append("Starting qbsp\n");
+            g_app.compile_output.append("Starting qbsp\n");
 
             copy_bsp = true;
 
@@ -220,47 +224,47 @@ struct CompileJob
             if (!RunTool("qbsp.exe", args))
                 return;
 
-            compile_output.append("Finished qbsp\n");
-            compile_output.append("------------------------------------------------\n");
+            g_app.compile_output.append("Finished qbsp\n");
+            g_app.compile_output.append("------------------------------------------------\n");
 
         }
-        if (stop_compiling) return;
+        if (g_app.stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED) {
-            compile_output.append("Starting light\n");
+            g_app.compile_output.append("Starting light\n");
 
             copy_lit = true;
             std::string args = config.light_args + " " + work_bsp;
             if (!RunTool("light.exe", args))
                 return;
 
-            compile_output.append("Finished light\n");
-            compile_output.append("------------------------------------------------\n");
+            g_app.compile_output.append("Finished light\n");
+            g_app.compile_output.append("------------------------------------------------\n");
         }
-        if (stop_compiling) return;
+        if (g_app.stop_compiling) return;
 
         if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED) {
-            compile_output.append("Starting vis\n");
+            g_app.compile_output.append("Starting vis\n");
 
             std::string args = config.vis_args + " " + work_bsp;
             if (!RunTool("vis.exe", args))
                 return;
 
-            compile_output.append("Finished vis\n");
-            compile_output.append("------------------------------------------------\n");
+            g_app.compile_output.append("Finished vis\n");
+            g_app.compile_output.append("------------------------------------------------\n");
         }
-        if (stop_compiling) return;
+        if (g_app.stop_compiling) return;
 
         std::string out_bsp = PathJoin(PathFromNative(config.config_paths[PATH_OUTPUT_DIR]), PathFilename(work_bsp));
         std::string out_lit = PathJoin(PathFromNative(config.config_paths[PATH_OUTPUT_DIR]), PathFilename(work_lit));
 
         if (copy_bsp && PathExists(work_bsp)) {
             if (Copy(work_bsp, out_bsp)) {
-                compile_output.append("Copied ");
-                compile_output.append(work_bsp);
-                compile_output.append(" to ");
-                compile_output.append(out_bsp);
-                compile_output.append("\n");
+                g_app.compile_output.append("Copied ");
+                g_app.compile_output.append(work_bsp);
+                g_app.compile_output.append(" to ");
+                g_app.compile_output.append(out_bsp);
+                g_app.compile_output.append("\n");
             }
             else {
                 return;
@@ -269,25 +273,25 @@ struct CompileJob
         
         if (copy_lit && PathExists(work_lit)) {
             if (Copy(work_lit, out_lit)) {
-                compile_output.append("Copied ");
-                compile_output.append(work_lit);
-                compile_output.append(" to ");
-                compile_output.append(out_lit);
-                compile_output.append("\n");
+                g_app.compile_output.append("Copied ");
+                g_app.compile_output.append(work_lit);
+                g_app.compile_output.append(" to ");
+                g_app.compile_output.append(out_lit);
+                g_app.compile_output.append("\n");
             }
         }
 
-        if (copy_lit || copy_bsp) compile_output.append("------------------------------------------------\n");
+        if (copy_lit || copy_bsp) g_app.compile_output.append("------------------------------------------------\n");
 
         auto time_end = std::chrono::system_clock::now();
         auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_begin);
         float secs = time_elapsed.count() / 1000.0f;
-        compile_status = "Finished in " + std::to_string(secs) + " seconds.";
-        compile_output.append(compile_status);
-        compile_output.append("\n\n");
+        g_app.compile_status = "Finished in " + std::to_string(secs) + " seconds.";
+        g_app.compile_output.append(g_app.compile_status);
+        g_app.compile_output.append("\n\n");
 
         if (run_quake) {
-            compile_output.append("------------------------------------------------\n");
+            g_app.compile_output.append("------------------------------------------------\n");
 
             std::string args = config.quake_args;
             if (args.find("+map") == std::string::npos) {
@@ -298,10 +302,10 @@ struct CompileJob
                 args.append(map_arg);
             }
 
-            compile_status = "Running quake with command-line: " + args;
+            g_app.compile_status = "Running quake with command-line: " + args;
 
-            compile_output.append(compile_status);
-            compile_output.append("\n");
+            g_app.compile_output.append(g_app.compile_status);
+            g_app.compile_output.append("\n");
 
             std::string cmd = PathFromNative(config.config_paths[PATH_ENGINE_EXE]);
             std::string pwd = PathDirectory(cmd);
@@ -369,32 +373,32 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
         return;
     }
 
-    auto output = &compile_output;
+    auto output = &g_app.compile_output;
     if (suppress_output) {
         output = nullptr;
     }
-    ReadToMutexCharBuffer(proc, &stop_compiling, output);
+    ReadToMutexCharBuffer(proc, &g_app.stop_compiling, output);
 }
 
 static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
 {
     ShellCommand proc{ cmd, pwd };
-    ReadToMutexCharBuffer(proc, nullptr, &compile_output);
+    ReadToMutexCharBuffer(proc, nullptr, &g_app.compile_output);
 }
 
 static void StartCompileJob(const Config& cfg, bool run_quake)
 {
-    console_auto_scroll = true;
-    console_lock_scroll = true;
+    g_app.console_auto_scroll = true;
+    g_app.console_lock_scroll = true;
     ClearConsole();
 
-    if (compiling) {
-        stop_compiling = true;
+    if (g_app.compiling) {
+        g_app.stop_compiling = true;
     }
 
-    last_job_ran_quake = run_quake;
+    g_app.last_job_ran_quake = run_quake;
 
-    compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
+    g_app.compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
 }
 
 static void AddExtensionIfNone(std::string& path, const std::string& extension)
@@ -415,13 +419,13 @@ static bool IsExtension(const std::string& path, const std::string& extension)
 
 static void HandleMapSourceChanged()
 {
-    map_file_watcher->SetPath(current_config.config_paths[PATH_MAP_SOURCE]);
+    g_app.map_file_watcher->SetPath(g_app.current_config.config_paths[PATH_MAP_SOURCE]);
 }
 
 static void SetConfigPath(ConfigPath path, const std::string& value)
 {
-    modified = true;
-    current_config.config_paths[path] = value;
+    g_app.modified = true;
+    g_app.current_config.config_paths[path] = value;
     if (path == PATH_MAP_SOURCE) {
         HandleMapSourceChanged();
     }
@@ -431,20 +435,20 @@ static void AddRecentConfig(const std::string& path)
 {
     if (path.empty()) return;
 
-    for (int i = 0; i < user_config.recent_configs.size(); i++) {
-        if (path == user_config.recent_configs[i]) return;
+    for (int i = 0; i < g_app.user_config.recent_configs.size(); i++) {
+        if (path == g_app.user_config.recent_configs[i]) return;
     }
 
-    if (user_config.recent_configs.size() >= CONFIG_RECENT_COUNT) {
-        user_config.recent_configs.pop_front();
+    if (g_app.user_config.recent_configs.size() >= CONFIG_RECENT_COUNT) {
+        g_app.user_config.recent_configs.pop_front();
     }
-    user_config.recent_configs.push_back(path);
+    g_app.user_config.recent_configs.push_back(path);
 }
 
 static int FindPresetIndex(const std::string& name)
 {
-    for (std::size_t i = 0; i < user_config.tool_presets.size(); i++) {
-        if (user_config.tool_presets[i].name == name) {
+    for (std::size_t i = 0; i < g_app.user_config.tool_presets.size(); i++) {
+        if (g_app.user_config.tool_presets[i].name == name) {
             return (int)i;
         }
     }
@@ -453,13 +457,13 @@ static int FindPresetIndex(const std::string& name)
 
 static bool ComparePresetToConfig(const ToolPreset& preset)
 {
-    if (preset.flags != current_config.tool_flags)
+    if (preset.flags != g_app.current_config.tool_flags)
         return true;
-    if (preset.qbsp_args != current_config.qbsp_args)
+    if (preset.qbsp_args != g_app.current_config.qbsp_args)
         return true;
-    if (preset.light_args != current_config.light_args)
+    if (preset.light_args != g_app.current_config.light_args)
         return true;
-    if (preset.vis_args != current_config.vis_args)
+    if (preset.vis_args != g_app.current_config.vis_args)
         return true;
 
     return false;
@@ -467,21 +471,21 @@ static bool ComparePresetToConfig(const ToolPreset& preset)
 
 static void SaveConfig(const std::string& path)
 {
-    int pi = current_config.selected_preset_index - 1;
+    int pi = g_app.current_config.selected_preset_index - 1;
     if (pi >= 0) {
-        current_config.selected_preset = user_config.tool_presets[pi].name;
+        g_app.current_config.selected_preset = g_app.user_config.tool_presets[pi].name;
     }
     else {
-        current_config.selected_preset = "";
+        g_app.current_config.selected_preset = "";
     }
 
-    WriteConfig(current_config, path);
-    user_config.loaded_config = path;
-    last_loaded_config_name = current_config.config_name;
-    WriteUserConfig(user_config);
+    WriteConfig(g_app.current_config, path);
+    g_app.user_config.loaded_config = path;
+    g_app.last_loaded_config_name = g_app.current_config.config_name;
+    WriteUserConfig(g_app.user_config);
 
-    modified = false;
-    console_auto_scroll = true;
+    g_app.modified = false;
+    g_app.console_auto_scroll = true;
     Print("Saved config: ");
     Print(path.c_str());
     Print("\n");
@@ -490,7 +494,7 @@ static void SaveConfig(const std::string& path)
 static bool LoadConfig(const std::string& path)
 {
     if (!PathExists(path)) {
-        console_auto_scroll = true;
+        g_app.console_auto_scroll = true;
         PrintError("File not found: ");
         PrintError(path.c_str());
         PrintError("\n");
@@ -498,29 +502,29 @@ static bool LoadConfig(const std::string& path)
     }
 
     if (!IsExtension(path, ".cfg")) {
-        console_auto_scroll = true;
+        g_app.console_auto_scroll = true;
         PrintError("Invalid config file: ");
         PrintError(path.c_str());
         PrintError("\n");
         return false;
     }
 
-    current_config = ReadConfig(path);
-    current_config.selected_preset_index = FindPresetIndex(current_config.selected_preset) + 1;
-    if (current_config.selected_preset_index > 0) {
-        if (ComparePresetToConfig(user_config.tool_presets[current_config.selected_preset_index - 1])) {
-            modified_flags = true;
+    g_app.current_config = ReadConfig(path);
+    g_app.current_config.selected_preset_index = FindPresetIndex(g_app.current_config.selected_preset) + 1;
+    if (g_app.current_config.selected_preset_index > 0) {
+        if (ComparePresetToConfig(g_app.user_config.tool_presets[g_app.current_config.selected_preset_index - 1])) {
+            g_app.modified_flags = true;
         }
     }
 
-    user_config.loaded_config = path;
-    last_loaded_config_name = current_config.config_name;
-    WriteUserConfig(user_config);
+    g_app.user_config.loaded_config = path;
+    g_app.last_loaded_config_name = g_app.current_config.config_name;
+    WriteUserConfig(g_app.user_config);
 
     HandleMapSourceChanged();
 
-    modified = false;
-    console_auto_scroll = true;
+    g_app.modified = false;
+    g_app.console_auto_scroll = true;
     Print("Loaded config: ");
     Print(path.c_str());
     Print("\n");
@@ -529,23 +533,23 @@ static bool LoadConfig(const std::string& path)
 
 static void CopyPreset(const ToolPreset& preset)
 {
-    modified = ComparePresetToConfig(preset);
-    current_config.qbsp_args = preset.qbsp_args;
-    current_config.light_args = preset.light_args;
-    current_config.vis_args = preset.vis_args;
-    current_config.tool_flags = preset.flags;
+    g_app.modified = ComparePresetToConfig(preset);
+    g_app.current_config.qbsp_args = preset.qbsp_args;
+    g_app.current_config.light_args = preset.light_args;
+    g_app.current_config.vis_args = preset.vis_args;
+    g_app.current_config.tool_flags = preset.flags;
 }
 
 static ToolPreset& GetPreset(int i)
 {
-    return user_config.tool_presets[i - 1];
+    return g_app.user_config.tool_presets[i - 1];
 }
 
 static void AddBuiltinPresets()
 {
-    for (const auto& preset : builtin_presets) {
+    for (const auto& preset : g_builtin_presets) {
         if (FindPresetIndex(preset.name) == -1) {
-            user_config.tool_presets.insert(user_config.tool_presets.begin(), preset);
+            g_app.user_config.tool_presets.insert(g_app.user_config.tool_presets.begin(), preset);
         }
     }
 }
@@ -616,7 +620,7 @@ bool SelectFileDialog(const char* filter, FileBrowserFlags flags, std::string& o
     OPENFILENAME s;
     ZeroMemory(&s, sizeof(OPENFILENAME));
     s.lStructSize = sizeof(OPENFILENAME);
-    s.hwndOwner = (HWND)platform_data;
+    s.hwndOwner = (HWND)g_app.platform_data;
     s.lpstrFilter = filter;
     s.lpstrFile = buf;
     s.nMaxFile = sizeof(buf);
@@ -658,89 +662,89 @@ UI Event Handlers
 
 static void HandleNewConfig()
 {
-    if (modified) {
-        show_confirm_new_window = true;
+    if (g_app.modified) {
+        g_app.show_confirm_new_window = true;
         return;
     }
 
-    AddRecentConfig(user_config.loaded_config);
+    AddRecentConfig(g_app.user_config.loaded_config);
 
-    current_config = {};
-    user_config.loaded_config = "";
-    WriteUserConfig(user_config);
+    g_app.current_config = {};
+    g_app.user_config.loaded_config = "";
+    WriteUserConfig(g_app.user_config);
 }
 
 static void HandleLoadConfig()
 {
-    std::string pwd = PathDirectory(user_config.loaded_config);
+    std::string pwd = PathDirectory(g_app.user_config.loaded_config);
     std::string user_path = pwd;
     FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
     if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
-        fb_callback = FB_LOAD_CONFIG;
-        fb_path = user_path;
+        g_app.fb_callback = FB_LOAD_CONFIG;
+        g_app.fb_path = user_path;
         HandleFileBrowserCallback();
     }
 }
 
 static void HandleLoadRecentConfig(int i)
 {
-    const std::string& path = user_config.recent_configs[i];
+    const std::string& path = g_app.user_config.recent_configs[i];
     if (!LoadConfig(path)) {
-        user_config.recent_configs.erase(user_config.recent_configs.begin() + i);
+        g_app.user_config.recent_configs.erase(g_app.user_config.recent_configs.begin() + i);
     }
 }
 
 static void HandleSaveConfigAs()
 {
-    std::string pwd = PathDirectory(user_config.loaded_config);
-    std::string filename = current_config.config_name + ".cfg";
+    std::string pwd = PathDirectory(g_app.user_config.loaded_config);
+    std::string filename = g_app.current_config.config_name + ".cfg";
     std::string path = PathJoin(pwd, filename);
     std::string user_path = path;
     FileBrowserFlag flags = FB_FLAG_SAVE;
 
     if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
-        fb_callback = FB_SAVE_CONFIG;
-        fb_path = user_path;
+        g_app.fb_callback = FB_SAVE_CONFIG;
+        g_app.fb_path = user_path;
         HandleFileBrowserCallback();
     }
 }
 
 static void HandleSaveConfig()
 {
-    if (user_config.loaded_config.empty() || current_config.config_name != last_loaded_config_name) {
+    if (g_app.user_config.loaded_config.empty() || g_app.current_config.config_name != g_app.last_loaded_config_name) {
         HandleSaveConfigAs();
         return;
     }
 
-    SaveConfig(user_config.loaded_config);
+    SaveConfig(g_app.user_config.loaded_config);
 }
 
 static void HandleCompileAndRun()
 {
-    StartCompileJob(current_config, true);
+    StartCompileJob(g_app.current_config, true);
 }
 
 static void HandleCompileOnly()
 {
-    StartCompileJob(current_config, false);
+    StartCompileJob(g_app.current_config, false);
 }
 
 static void HandleStopCompiling()
 {
-    if (compiling) {
-        stop_compiling = true;
+    if (g_app.compiling) {
+        g_app.stop_compiling = true;
     }
 }
 
 static void HandleRun()
 {
-    Config job_config = current_config;
+    Config job_config = g_app.current_config;
     job_config.tool_flags = 0;
 
-    if (!last_job_ran_quake) {
+    if (!g_app.last_job_ran_quake) {
         // Instead of stopping the current compilation, just add the job to the queue
-        compile_queue->AddWork(0, CompileJob{ job_config, true });
+        g_app.compile_queue->AddWork(0, CompileJob{ job_config, true });
     }
     else {
         StartCompileJob(job_config, true);
@@ -749,16 +753,16 @@ static void HandleRun()
 
 static void HandleToolHelp(int tool_flag)
 {
-    console_auto_scroll = false;
-    console_lock_scroll = false;
+    g_app.console_auto_scroll = false;
+    g_app.console_lock_scroll = false;
     ClearConsole();
-    compile_queue->AddWork(0, HelpJob{ current_config.config_paths[PATH_TOOLS_DIR], tool_flag });
+    g_app.compile_queue->AddWork(0, HelpJob{ g_app.current_config.config_paths[PATH_TOOLS_DIR], tool_flag });
 }
 
 static void HandlePathSelect(ConfigPath path)
 {
     bool should_be_dir = ShouldConfigPathBeDirectory(path);
-    std::string pwd = PathFromNative(current_config.config_paths[path]);
+    std::string pwd = PathFromNative(g_app.current_config.config_paths[path]);
     std::string user_path = pwd;
     FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
@@ -767,23 +771,23 @@ static void HandlePathSelect(ConfigPath path)
         ok = SelectDirDialog(user_path);
     }
     else {
-        ok = SelectFileDialog(config_paths_filter[path], flags, user_path);
+        ok = SelectFileDialog(g_config_paths_filter[path], flags, user_path);
     }
 
     if (ok) {
-        fb_callback = (FileBrowserCallback)(FB_CONFIG_STR + path);
-        fb_path = user_path;
+        g_app.fb_callback = (FileBrowserCallback)(FB_CONFIG_STR + path);
+        g_app.fb_path = user_path;
         HandleFileBrowserCallback();
     }
 }
 
 static void HandleFileBrowserCallback()
 {
-    switch (fb_callback) {
+    switch (g_app.fb_callback) {
     case FB_LOAD_CONFIG: {
-        std::string path = PathFromNative(fb_path);
+        std::string path = PathFromNative(g_app.fb_path);
         if (!IsExtension(path, ".cfg")) {
-            console_auto_scroll = true;
+            g_app.console_auto_scroll = true;
             PrintError("Invalid config file: ");
             PrintError(path.c_str());
             PrintError("\n");
@@ -791,27 +795,27 @@ static void HandleFileBrowserCallback()
         }
 
         if (PathExists(path)) {
-            if (path != user_config.loaded_config) {
-                AddRecentConfig(user_config.loaded_config);
+            if (path != g_app.user_config.loaded_config) {
+                AddRecentConfig(g_app.user_config.loaded_config);
             }
             LoadConfig(path);
         }
     } break;
 
     case FB_SAVE_CONFIG: {
-        std::string path = PathFromNative(fb_path);
+        std::string path = PathFromNative(g_app.fb_path);
         AddExtensionIfNone(path, ".cfg");
 
-        if (path != user_config.loaded_config) {
-            AddRecentConfig(user_config.loaded_config);
+        if (path != g_app.user_config.loaded_config) {
+            AddRecentConfig(g_app.user_config.loaded_config);
         }
         SaveConfig(path);
     } break;
 
     case FB_IMPORT_PRESET: {
-        std::string path = PathFromNative(fb_path);
+        std::string path = PathFromNative(g_app.fb_path);
         if (!IsExtension(path, ".pre")) {
-            console_auto_scroll = true;
+            g_app.console_auto_scroll = true;
             PrintError("Invalid preset file: ");
             PrintError(path.c_str());
             PrintError("\n");
@@ -821,7 +825,7 @@ static void HandleFileBrowserCallback()
         if (PathExists(path)) {
             ToolPreset preset = ReadToolPreset(path);
             if (preset.name.empty()) {
-                console_auto_scroll = true;
+                g_app.console_auto_scroll = true;
                 PrintError("Invalid preset file: ");
                 PrintError(path.c_str());
                 PrintError("\n");
@@ -830,13 +834,13 @@ static void HandleFileBrowserCallback()
 
             while (StrReplace(preset.name, "(built-in)", "")) {}
 
-            user_config.last_import_preset_location = PathDirectory(path);
-            user_config.tool_presets.push_back(preset);
-            WriteUserConfig(user_config);
+            g_app.user_config.last_import_preset_location = PathDirectory(path);
+            g_app.user_config.tool_presets.push_back(preset);
+            WriteUserConfig(g_app.user_config);
 
-            show_preset_window = true;
+            g_app.show_preset_window = true;
 
-            console_auto_scroll = true;
+            g_app.console_auto_scroll = true;
             Print("Preset imported: ");
             Print(path.c_str());
             Print("\n");
@@ -844,29 +848,29 @@ static void HandleFileBrowserCallback()
     } break;
 
     case FB_EXPORT_PRESET: {
-        std::string path = PathFromNative(fb_path);
+        std::string path = PathFromNative(g_app.fb_path);
         AddExtensionIfNone(path, ".pre");
 
-        auto exp_preset = user_config.tool_presets[preset_to_export];
+        auto exp_preset = g_app.user_config.tool_presets[g_app.preset_to_export];
         while (StrReplace(exp_preset.name, "(built-in)", "")) {}
         WriteToolPreset(exp_preset, path);
         
-        user_config.last_export_preset_location = PathDirectory(path);
-        WriteUserConfig(user_config);
+        g_app.user_config.last_export_preset_location = PathDirectory(path);
+        WriteUserConfig(g_app.user_config);
 
-        show_preset_window = true;
+        g_app.show_preset_window = true;
 
-        console_auto_scroll = true;
+        g_app.console_auto_scroll = true;
         Print("Preset exported: ");
         Print(path.c_str());
         Print("\n");
     } break;
 
     default:
-        if (fb_callback >= FB_CONFIG_STR)
+        if (g_app.fb_callback >= FB_CONFIG_STR)
             SetConfigPath(
-                (ConfigPath)(fb_callback - FB_CONFIG_STR),
-                PathFromNative(fb_path)
+                (ConfigPath)(g_app.fb_callback - FB_CONFIG_STR),
+                PathFromNative(g_app.fb_path)
             );
         break;
     }
@@ -874,10 +878,10 @@ static void HandleFileBrowserCallback()
 
 static void HandleFileBrowserCancel()
 {
-    switch (fb_callback) {
+    switch (g_app.fb_callback) {
     case FB_IMPORT_PRESET:
     case FB_EXPORT_PRESET:
-        show_preset_window = true;
+        g_app.show_preset_window = true;
         break;
     }
 }
@@ -891,51 +895,51 @@ static void HandleSelectPreset(int i)
         return;
     }
 
-    current_config.selected_preset_index = i;
-    CopyPreset(user_config.tool_presets[i - 1]);
+    g_app.current_config.selected_preset_index = i;
+    CopyPreset(g_app.user_config.tool_presets[i - 1]);
 
-    modified_flags = false;
+    g_app.modified_flags = false;
 }
 
 static void HandleImportPreset()
 {
-    std::string pwd = user_config.last_import_preset_location;
+    std::string pwd = g_app.user_config.last_import_preset_location;
     std::string user_path = pwd;
     FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
     if (SelectFileDialog("Preset File (*.pre)\0*.pre\0", flags, user_path)) {
-        fb_callback = FB_IMPORT_PRESET;
-        fb_path = user_path;
+        g_app.fb_callback = FB_IMPORT_PRESET;
+        g_app.fb_path = user_path;
         HandleFileBrowserCallback();
     }
 }
 
 static void HandleExportPreset(int real_index)
 {
-    std::string pwd = user_config.last_export_preset_location;
-    std::string filename = user_config.tool_presets[real_index].name + ".pre";
+    std::string pwd = g_app.user_config.last_export_preset_location;
+    std::string filename = g_app.user_config.tool_presets[real_index].name + ".pre";
     std::string path = PathJoin(pwd, filename);
     std::string user_path = path;
     FileBrowserFlags flags = FB_FLAG_SAVE;
 
     if (SelectFileDialog("Preset File (*.pre)\0*.pre\0", flags, user_path)) {
-        preset_to_export = real_index;
-        fb_callback = FB_EXPORT_PRESET;
-        fb_path = user_path;
+        g_app.preset_to_export = real_index;
+        g_app.fb_callback = FB_EXPORT_PRESET;
+        g_app.fb_path = user_path;
         HandleFileBrowserCallback();
     }
 }
 
 static void HandleClearWorkingFiles()
 {
-    std::string source_map = PathFromNative(current_config.config_paths[PATH_MAP_SOURCE]);
-    std::string work_map = PathJoin(PathFromNative(current_config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
+    std::string source_map = PathFromNative(g_app.current_config.config_paths[PATH_MAP_SOURCE]);
+    std::string work_map = PathJoin(PathFromNative(g_app.current_config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
     std::string work_bsp = work_map;
     std::string work_lit = work_map;
     StrReplace(work_bsp, ".map", ".bsp");
     StrReplace(work_lit, ".map", ".lit");
 
-    console_auto_scroll = true;
+    g_app.console_auto_scroll = true;
     if (RemovePath(work_bsp)) {
         Print("Removed ");
         Print(work_bsp.c_str());
@@ -950,14 +954,14 @@ static void HandleClearWorkingFiles()
 
 static void HandleClearOutputFiles()
 {
-    std::string source_map = PathFromNative(current_config.config_paths[PATH_MAP_SOURCE]);
-    std::string out_map = PathJoin(PathFromNative(current_config.config_paths[PATH_OUTPUT_DIR]), PathFilename(source_map));
+    std::string source_map = PathFromNative(g_app.current_config.config_paths[PATH_MAP_SOURCE]);
+    std::string out_map = PathJoin(PathFromNative(g_app.current_config.config_paths[PATH_OUTPUT_DIR]), PathFilename(source_map));
     std::string out_bsp = out_map;
     std::string out_lit = out_map;
     StrReplace(out_bsp, ".map", ".bsp");
     StrReplace(out_lit, ".map", ".lit");
 
-    console_auto_scroll = true;
+    g_app.console_auto_scroll = true;
     if (RemovePath(out_bsp)) {
         Print("Removed ");
         Print(out_bsp.c_str());
@@ -989,9 +993,9 @@ UI Drawing
 
 static void DrawRecentConfigs()
 {
-    int size = user_config.recent_configs.size();
+    int size = g_app.user_config.recent_configs.size();
     for (int i = size - 1; i >= 0; i--) {
-        std::string filename = PathFilename(user_config.recent_configs[i]);
+        std::string filename = PathFilename(g_app.user_config.recent_configs[i]);
         if (ImGui::MenuItem(filename.c_str(), "", nullptr)) {
             HandleLoadRecentConfig(i);
         }
@@ -1018,7 +1022,7 @@ static void DrawMenuBar()
                 HandleSaveConfigAs();
             }
 
-            if (user_config.recent_configs.size() > 0) {
+            if (g_app.user_config.recent_configs.size() > 0) {
                 ImGui::Separator();
                 DrawRecentConfigs();
             }
@@ -1026,7 +1030,7 @@ static void DrawMenuBar()
             ImGui::Separator();
 
             if (ImGui::MenuItem("Quit", "Ctrl+Q", nullptr)) {
-                app_running = false;
+                g_app.app_running = false;
             }
 
             ImGui::EndMenu();
@@ -1064,7 +1068,7 @@ static void DrawMenuBar()
             ImGui::Separator();
 
             if (ImGui::MenuItem("Manage presets...", "Ctrl+P", nullptr)) {
-                show_preset_window = true;
+                g_app.show_preset_window = true;
             }
 
             ImGui::EndMenu();
@@ -1072,7 +1076,7 @@ static void DrawMenuBar()
 
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About", "", nullptr)) {
-                show_help_window = true;
+                g_app.show_help_window = true;
             }
             ImGui::EndMenu();
         }
@@ -1117,7 +1121,7 @@ static bool DrawTextInput(const char* label, std::string& str, float spacing, Im
 
 static bool DrawFileInput(const char* label, ConfigPath path, float spacing)
 {
-    bool changed = DrawTextInput(label, current_config.config_paths[path], spacing);
+    bool changed = DrawTextInput(label, g_app.current_config.config_paths[path], spacing);
     if (changed) {
         if (path == PATH_MAP_SOURCE) {
             HandleMapSourceChanged();
@@ -1142,23 +1146,23 @@ static void DrawPresetCombo()
     DrawSpacing(40, 0); ImGui::SameLine();
 
     std::string selected_preset_name = "None";
-    if (current_config.selected_preset_index > 0) {
-        selected_preset_name = GetPreset(current_config.selected_preset_index).name;
+    if (g_app.current_config.selected_preset_index > 0) {
+        selected_preset_name = GetPreset(g_app.current_config.selected_preset_index).name;
 
-        if (modified_flags) {
+        if (g_app.modified_flags) {
             selected_preset_name.append(" (modified)");
         }
     }
 
     if (ImGui::BeginCombo("##presets", selected_preset_name.c_str())) {
         if (ImGui::Selectable("None", false)) {
-            current_config.selected_preset_index = 0;
+            g_app.current_config.selected_preset_index = 0;
             CopyPreset({});
         }
 
-        for (std::size_t i = 0; i < user_config.tool_presets.size(); i++) {
-            auto& preset = user_config.tool_presets[i];
-            bool selected = (i + 1) == current_config.selected_preset_index;
+        for (std::size_t i = 0; i < g_app.user_config.tool_presets.size(); i++) {
+            auto& preset = g_app.user_config.tool_presets[i];
+            bool selected = (i + 1) == g_app.current_config.selected_preset_index;
 
             if (ImGui::Selectable(preset.name.c_str(), selected)) {
                 HandleSelectPreset(i + 1);
@@ -1168,7 +1172,7 @@ static void DrawPresetCombo()
         DrawSeparator(2);
 
         if (ImGui::Selectable("Manage presets...", false)) {
-            show_preset_window = true;
+            g_app.show_preset_window = true;
         }
         ImGui::EndCombo();
     }
@@ -1180,15 +1184,15 @@ static bool DrawToolParams(const char* label, int tool_flag, std::string& args, 
     ImGui::PushID(tool_flag);
 
     if (tool_flag) {
-        bool checked = current_config.tool_flags & tool_flag;
+        bool checked = g_app.current_config.tool_flags & tool_flag;
         if (ImGui::Checkbox(label, &checked)) {
             changed = true;
 
             if (checked) {
-                current_config.tool_flags |= tool_flag;
+                g_app.current_config.tool_flags |= tool_flag;
             }
             else {
-                current_config.tool_flags = current_config.tool_flags & ~tool_flag;
+                g_app.current_config.tool_flags = g_app.current_config.tool_flags & ~tool_flag;
             }
         }
     }
@@ -1264,10 +1268,10 @@ static void DrawConsoleView()
 {
     static int num_entries;
 
-    float height = (float)window_height - ImGui::GetCursorPosY() - 70.0f;
+    float height = (float)g_app.window_height - ImGui::GetCursorPosY() - 70.0f;
     height = std::fmaxf(100.0f, height);
 
-    if (ImGui::BeginChild("ConsoleView", ImVec2{ (float)window_width - 28, height }, true)) {
+    if (ImGui::BeginChild("ConsoleView", ImVec2{ (float)g_app.window_width - 28, height }, true)) {
     
         auto& ents = GetLogEntries();
         for (const auto& ent : ents) {
@@ -1279,7 +1283,7 @@ static void DrawConsoleView()
         }
 
         bool should_scroll_down = (
-            (num_entries != ents.size() && console_auto_scroll) || console_lock_scroll
+            (num_entries != ents.size() && g_app.console_auto_scroll) || g_app.console_lock_scroll
         );
         if (should_scroll_down) {
             ImGui::SetScrollHereY();
@@ -1295,26 +1299,26 @@ static void DrawPresetWindow()
 {
     static bool prev_show;
 
-    if (show_preset_window) {
+    if (g_app.show_preset_window) {
         if (!prev_show) {
             ImGui::OpenPopup("Manage Tools Presets");
         }
 
-        ImGui::SetNextWindowSize({ window_width*0.5f, window_height * 0.7f }, ImGuiCond_Always);
-        ImGui::SetNextWindowPos({ window_width * 0.5f, window_height * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
+        ImGui::SetNextWindowSize({ g_app.window_width*0.5f, g_app.window_height * 0.7f }, ImGuiCond_Always);
+        ImGui::SetNextWindowPos({ g_app.window_width * 0.5f, g_app.window_height * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
 
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-        if (ImGui::BeginPopupModal("Manage Tools Presets", &show_preset_window, flags)) {
+        if (ImGui::BeginPopupModal("Manage Tools Presets", &g_app.show_preset_window, flags)) {
             static int newly_added_index = -1;
             int remove_index = -1;
             int dup_index = -1;
 
             if (ImGui::Button("Add Preset")) {
-                newly_added_index = user_config.tool_presets.size();
+                newly_added_index = g_app.user_config.tool_presets.size();
 
                 ToolPreset preset = {};
                 preset.name = "New Preset";
-                user_config.tool_presets.push_back(preset);
+                g_app.user_config.tool_presets.push_back(preset);
             }
             ImGui::SameLine();
             if (ImGui::Button("Import Preset")) {
@@ -1324,8 +1328,8 @@ static void DrawPresetWindow()
             DrawSpacing(0, 5);
 
             if (ImGui::BeginChild("Preset list")) {
-                for (int i = 0; i < (int)user_config.tool_presets.size(); i++) {
-                    auto& preset = user_config.tool_presets[i];
+                for (int i = 0; i < (int)g_app.user_config.tool_presets.size(); i++) {
+                    auto& preset = g_app.user_config.tool_presets[i];
 
                     ImGui::PushID(i);
 
@@ -1376,20 +1380,20 @@ static void DrawPresetWindow()
             ImGui::EndChild();
 
             if (remove_index != -1) {
-                if (remove_index + 1 == current_config.selected_preset_index) {
-                    current_config.selected_preset_index = 0;
+                if (remove_index + 1 == g_app.current_config.selected_preset_index) {
+                    g_app.current_config.selected_preset_index = 0;
                 }
 
-                user_config.tool_presets.erase(user_config.tool_presets.begin() + remove_index);
+                g_app.user_config.tool_presets.erase(g_app.user_config.tool_presets.begin() + remove_index);
             }
             if (dup_index != -1) {
-                auto dup_preset = user_config.tool_presets[dup_index];
+                auto dup_preset = g_app.user_config.tool_presets[dup_index];
                 dup_preset.builtin = false;
                 while (StrReplace(dup_preset.name, "(built-in)", "")) {}
                 dup_preset.name.append(" (copy)");
 
-                auto it = user_config.tool_presets.begin() + dup_index + 1;
-                user_config.tool_presets.insert(it, dup_preset);
+                auto it = g_app.user_config.tool_presets.begin() + dup_index + 1;
+                g_app.user_config.tool_presets.insert(it, dup_preset);
 
                 newly_added_index = dup_index + 1;
             }
@@ -1398,54 +1402,54 @@ static void DrawPresetWindow()
         }
 
         // Just closed
-        if (!show_preset_window) {
-            WriteUserConfig(user_config);
+        if (!g_app.show_preset_window) {
+            WriteUserConfig(g_app.user_config);
         }
     }
 
-    prev_show = show_preset_window;
+    prev_show = g_app.show_preset_window;
 }
 
 static void DrawConfirmNewWindow()
 {
     static bool prev_show;
 
-    if (show_confirm_new_window) {
+    if (g_app.show_confirm_new_window) {
         if (!prev_show) {
             ImGui::OpenPopup("Save Changes");
         }
 
         bool clicked_btn = false;
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-        if (ImGui::BeginPopupModal("Save Changes", &show_confirm_new_window, flags)) {
+        if (ImGui::BeginPopupModal("Save Changes", &g_app.show_confirm_new_window, flags)) {
             ImGui::Text("You have unsaved changes to your config, do you want to save?");
             DrawSeparator(5);
 
             if (ImGui::Button("Save")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
-                show_confirm_new_window = false;
+                g_app.show_confirm_new_window = false;
                 HandleSaveConfig();
             }
             ImGui::SameLine();
             if (ImGui::Button("Discard")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
-                show_confirm_new_window = false;
-                modified = false;
+                g_app.show_confirm_new_window = false;
+                g_app.modified = false;
                 HandleNewConfig();
             }
             ImGui::EndPopup();
         }
 
         // Just closed
-        if (!show_confirm_new_window && !clicked_btn) {
-            modified = false;
+        if (!g_app.show_confirm_new_window && !clicked_btn) {
+            g_app.modified = false;
             HandleNewConfig();
         }
     }
 
-    prev_show = show_confirm_new_window;
+    prev_show = g_app.show_confirm_new_window;
 }
 
 static void DrawCredits()
@@ -1461,23 +1465,23 @@ static void DrawHelpWindow()
     static bool prev_show;
     static ImGui::MarkdownConfig mdConfig = {};
 
-    if (show_help_window) {
+    if (g_app.show_help_window) {
         if (!prev_show) {
             ImGui::OpenPopup("About");
         }
 
         bool clicked_btn = false;
         ImGuiWindowFlags flags = 0;
-        ImGui::SetNextWindowSize(ImVec2{ window_width * 0.75f, window_height * 0.75f }, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2{ g_app.window_width * 0.75f, g_app.window_height * 0.75f }, ImGuiCond_Always);
         //ImGui::SetNextWindowPosCenter(ImGuiCond_Appearing);
-        if (ImGui::BeginPopupModal("About", &show_help_window, flags)) {
+        if (ImGui::BeginPopupModal("About", &g_app.show_help_window, flags)) {
             auto readmeText = GetReadmeText();
             ImGui::Markdown( readmeText.c_str(), readmeText.length(), mdConfig );
             ImGui::EndPopup();
         }
     }
 
-    prev_show = show_help_window;
+    prev_show = g_app.show_help_window;
 }
 
 static void DrawMainContent()
@@ -1486,8 +1490,8 @@ static void DrawMainContent()
     if (ImGui::TreeNode("Info")) {
         DrawSpacing(0, 5);
 
-        if (DrawTextInput("Config Name: ", current_config.config_name, 5)) modified = true;
-        DrawTextInput("Path: ", user_config.loaded_config, 54, ImGuiInputTextFlags_ReadOnly);
+        if (DrawTextInput("Config Name: ", g_app.current_config.config_name, 5)) g_app.modified = true;
+        DrawTextInput("Path: ", g_app.user_config.loaded_config, 54, ImGuiInputTextFlags_ReadOnly);
 
         ImGui::TreePop();
     }
@@ -1499,11 +1503,11 @@ static void DrawMainContent()
         DrawSpacing(0, 5);
 
         float offs = 0.0f;
-        if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20 + offs)) modified = true;
-        if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27 + offs)) modified = true;
-        if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f + offs)) modified = true;
-        if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f + offs)) modified = true;
-        if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f + offs)) modified = true;
+        if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20 + offs)) g_app.modified = true;
+        if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27 + offs)) g_app.modified = true;
+        if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f + offs)) g_app.modified = true;
 
         ImGui::TreePop();
     }
@@ -1516,20 +1520,20 @@ static void DrawMainContent()
 
         DrawPresetCombo();
 
-        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, current_config.qbsp_args, 45)) {
-            modified = true;
-            modified_flags = true;
+        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, g_app.current_config.qbsp_args, 45)) {
+            g_app.modified = true;
+            g_app.modified_flags = true;
         }
-        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, current_config.light_args, 38)) {
-            modified = true;
-            modified_flags = true;
+        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app.current_config.light_args, 38)) {
+            g_app.modified = true;
+            g_app.modified_flags = true;
         }
-        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, current_config.vis_args, 52)) {
-            modified = true;
-            modified_flags = true;
+        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, g_app.current_config.vis_args, 52)) {
+            g_app.modified = true;
+            g_app.modified_flags = true;
         }
-        if (DrawToolParams("QUAKE", 0, current_config.quake_args, 38)) {
-            modified = true;
+        if (DrawToolParams("QUAKE", 0, g_app.current_config.quake_args, 38)) {
+            g_app.modified = true;
         }
         ImGui::TreePop();
     }
@@ -1539,12 +1543,12 @@ static void DrawMainContent()
     ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
     if (ImGui::TreeNode("Other options")) {
         DrawSpacing(0, 5);
-        if (ImGui::Checkbox("Watch map file for changes and pre-compile", &current_config.watch_map_file)) {
-            modified = true;
-            map_file_watcher->SetEnabled(current_config.watch_map_file);
+        if (ImGui::Checkbox("Watch map file for changes and pre-compile", &g_app.current_config.watch_map_file)) {
+            g_app.modified = true;
+            g_app.map_file_watcher->SetEnabled(g_app.current_config.watch_map_file);
         }
 
-        ImGui::Checkbox("Quake console output enabled", &current_config.quake_output_enabled);
+        ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled);
 
         ImGui::TreePop();
     }
@@ -1552,7 +1556,7 @@ static void DrawMainContent()
     DrawSeparator(5);
 
     ImGui::Text("Status: "); ImGui::SameLine();
-    ImGui::InputText("##status", &compile_status, ImGuiInputTextFlags_ReadOnly);
+    ImGui::InputText("##status", &g_app.compile_status, ImGuiInputTextFlags_ReadOnly);
 
     DrawSpacing(0, 10);
 
@@ -1580,9 +1584,9 @@ static void DrawMainWindow()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
 
     ImGui::SetNextWindowPos(ImVec2{ 0, 18 }, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2{ (float)window_width, (float)window_height }, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2{ (float)g_app.window_width, (float)g_app.window_height }, ImGuiCond_Always);
     if (ImGui::Begin("##main", nullptr, flags)) {
-        if (ImGui::BeginChild("##content", ImVec2{ (float)window_width - 28, (float)window_height - 28 } )) {
+        if (ImGui::BeginChild("##content", ImVec2{ (float)g_app.window_width - 28, (float)g_app.window_height - 28 } )) {
             DrawMainContent();
         }
         ImGui::EndChild();
@@ -1601,30 +1605,30 @@ Application lifetime functions
 
 void qc_init(void* pdata)
 {    
-    platform_data = pdata;
-    app_running = true;
+    g_app.platform_data = pdata;
+    g_app.app_running = true;
 
     ClearConsole();
     SetErrorLogFile("q1compile_err.log");
 
-    map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
-    compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
+    g_app.map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
+    g_app.compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
     //fb = std::make_unique<ImGui::FileBrowser>();
-    compile_status = "Doing nothing.";
+    g_app.compile_status = "Doing nothing.";
 
-    user_config = ReadUserConfig();
-    MigrateUserConfig(user_config);
-    if (user_config.loaded_config.empty()) {
-        show_help_window = true;
+    g_app.user_config = ReadUserConfig();
+    MigrateUserConfig(g_app.user_config);
+    if (g_app.user_config.loaded_config.empty()) {
+        g_app.show_help_window = true;
     }
 
-    for (auto& preset : user_config.tool_presets) {
+    for (auto& preset : g_app.user_config.tool_presets) {
         while (StrReplace(preset.name, "(built-in)", "")) {}
     }
     AddBuiltinPresets();
-    if (!user_config.loaded_config.empty()) {
-        if (!LoadConfig(user_config.loaded_config)) {
-            user_config.loaded_config = "";
+    if (!g_app.user_config.loaded_config.empty()) {
+        if (!LoadConfig(g_app.user_config.loaded_config)) {
+            g_app.user_config.loaded_config = "";
         }
     }
 }
@@ -1677,12 +1681,12 @@ void qc_key_down(unsigned int key)
         break;
     case 'P':
         if (io.KeyCtrl) {
-            show_preset_window = true;
+            g_app.show_preset_window = true;
         }
         break;
     case 'Q':
         if (io.KeyCtrl) {
-            app_running = false;
+            g_app.app_running = false;
         }
         break;
     }
@@ -1690,19 +1694,19 @@ void qc_key_down(unsigned int key)
 
 void qc_resize(unsigned int width, unsigned int height)
 {
-    window_width = width;
-    window_height = height - 18;
+    g_app.window_width = width;
+    g_app.window_height = height - 18;
 }
 
 bool qc_render()
 {
     float dt = ImGui::GetIO().DeltaTime;
-    if (map_file_watcher->Update(dt)) {
+    if (g_app.map_file_watcher->Update(dt)) {
         HandleCompileOnly();
     }
 
-    while (!compile_output.empty()) {
-        char c = compile_output.pop();
+    while (!g_app.compile_output.empty()) {
+        char c = g_app.compile_output.pop();
         Print(c);
     }
 
@@ -1711,10 +1715,10 @@ bool qc_render()
     DrawMainWindow();
     ImGui::PopStyleColor(1);
 
-    return app_running;
+    return g_app.app_running;
 }
 
 void qc_deinit()
 {
-    WriteUserConfig(user_config);
+    WriteUserConfig(g_app.user_config);
 }
