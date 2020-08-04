@@ -10,7 +10,7 @@
 #include <tchar.h>
 #include "common.h"
 #include "q1compile.h"
-#include "../build/src/resource.h"
+//#include "../build/src/resource.h"
 
 // Data
 static LPDIRECT3D9              g_pD3D = NULL;
@@ -24,7 +24,7 @@ void ResetDevice();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // Main code
-int WinMain(
+int __stdcall WinMain(
     HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
     LPSTR     lpCmdLine,
@@ -32,6 +32,8 @@ int WinMain(
 ) {
     // Create application window
     WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("q1compile"), NULL };
+    //wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
+    
     ::RegisterClassEx(&wc);
     HWND hwnd = ::CreateWindow(wc.lpszClassName, _T(APP_NAME), WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, NULL, NULL, wc.hInstance, NULL);
 
