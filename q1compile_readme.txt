@@ -1,4 +1,4 @@
-# q1compile v0.4
+# q1compile v0.4.1
 
 A GUI to work with Quake map compiling tools.
 
@@ -73,6 +73,11 @@ there is a 'Actions...' selection dialog where you can:
 ## Issue Tracker
 
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues
+
+
+## Changes - v0.4.1
+
+  * Link against DirectX 9 to support Windows 7.
 
 
 ## Changes - v0.4
