@@ -40,6 +40,13 @@ int __stdcall WinMain(
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
     {
+        MessageBoxW(
+            NULL,
+            (LPCWSTR)L"Error initializing DirectX 9",
+            (LPCWSTR)L"DirectX Error",
+            MB_ICONERROR | MB_OK | MB_DEFBUTTON1
+        );
+
         CleanupDeviceD3D();
         ::UnregisterClass(wc.lpszClassName, wc.hInstance);
         return 1;
