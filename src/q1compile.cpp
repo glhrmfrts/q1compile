@@ -1631,6 +1631,13 @@ void qc_init(void* pdata)
             g_app.user_config.loaded_config = "";
         }
     }
+
+    // If watching a map, compile on launch
+    if (!g_app.user_config.loaded_config.empty()) {
+        if (!g_app.current_config.config_paths[PATH_MAP_SOURCE].empty() && g_app.current_config.watch_map_file) {
+            StartCompileJob(g_app.current_config, false);
+        }
+    }
 }
 
 void qc_key_down(unsigned int key)
