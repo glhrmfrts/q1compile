@@ -13,6 +13,7 @@ enum ConfigPath
     PATH_TOOLS_DIR,
     PATH_WORK_DIR,
     PATH_OUTPUT_DIR,
+    PATH_EDITOR_EXE,
     PATH_ENGINE_EXE,
     PATH_MAP_SOURCE,
     PATH_COUNT
@@ -33,6 +34,7 @@ struct Config
 
     bool watch_map_file;
     bool quake_output_enabled;
+    bool open_editor_on_launch;
     int tool_flags;
 
     // Runtime only

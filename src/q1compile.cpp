@@ -113,6 +113,7 @@ static std::vector<std::string> g_config_paths_title = {
     "Select Tools Dir",
     "Select Work Dir",
     "Select Output Dir",
+    "Select Editor Exe",
     "Select Engine Exe",
     "Select Map Source"
 };
@@ -121,6 +122,7 @@ static std::vector<const char*> g_config_paths_filter = {
     NULL,
     NULL,
     NULL,
+    "Executable Files (*.exe)\0*.exe\0",
     "Executable Files (*.exe)\0*.exe\0",
     "Map Source Files (*.map)\0*.map\0"
 };
@@ -985,6 +987,29 @@ static std::string GetReadmeText()
     return readme;
 }
 
+static void LaunchEditorProcess(const std::string& cmd)
+{
+    if (!StartDetachedProcess(cmd, "")) {
+        PrintError("Error launching editor: ");
+        PrintError(g_app.current_config.config_paths[PATH_EDITOR_EXE].c_str());
+        PrintError("\n");
+    }
+}
+
+static void HandleOpenMapInEditor()
+{
+    auto cmd = g_app.current_config.config_paths[PATH_EDITOR_EXE];
+    cmd.append(" ");
+    cmd.append(g_app.current_config.config_paths[PATH_MAP_SOURCE]);
+    LaunchEditorProcess(cmd);
+}
+
+static void HandleOpenEditor()
+{
+    auto cmd = g_app.current_config.config_paths[PATH_EDITOR_EXE];
+    LaunchEditorProcess(cmd);
+}
+
 /*
 ====================
 UI Drawing
@@ -1033,6 +1058,16 @@ static void DrawMenuBar()
                 g_app.app_running = false;
             }
 
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Edit")) {
+            if (ImGui::MenuItem("Open map in editor", "Ctrl+E", nullptr)) {
+                HandleOpenMapInEditor();
+            }
+            if (ImGui::MenuItem("Open editor", "Ctrl+Shift+E", nullptr)) {
+                HandleOpenEditor();
+            }
             ImGui::EndMenu();
         }
 
@@ -1506,6 +1541,7 @@ static void DrawMainContent()
         if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20 + offs)) g_app.modified = true;
         if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27 + offs)) g_app.modified = true;
         if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Editor Exe: ", PATH_EDITOR_EXE, 13.5f + offs)) g_app.modified = true;
         if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f + offs)) g_app.modified = true;
         if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f + offs)) g_app.modified = true;
 
@@ -1548,7 +1584,11 @@ static void DrawMainContent()
             g_app.map_file_watcher->SetEnabled(g_app.current_config.watch_map_file);
         }
 
-        ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled);
+        if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled))
+            g_app.modified = true;
+
+        if (ImGui::Checkbox("Open editor on launch", &g_app.current_config.open_editor_on_launch))
+            g_app.modified = true;
 
         ImGui::TreePop();
     }
@@ -1632,10 +1672,18 @@ void qc_init(void* pdata)
         }
     }
 
-    // If watching a map, compile on launch
     if (!g_app.user_config.loaded_config.empty()) {
-        if (!g_app.current_config.config_paths[PATH_MAP_SOURCE].empty() && g_app.current_config.watch_map_file) {
+        // If watching a map, compile on launch
+        if (g_app.current_config.watch_map_file
+            && !g_app.current_config.config_paths[PATH_MAP_SOURCE].empty()) {
             StartCompileJob(g_app.current_config, false);
+        }
+
+        // If enabled, open the editor on launch
+        if (g_app.current_config.open_editor_on_launch
+            && !g_app.current_config.config_paths[PATH_MAP_SOURCE].empty()
+            && !g_app.current_config.config_paths[PATH_EDITOR_EXE].empty()) {
+            HandleOpenMapInEditor();
         }
     }
 }
@@ -1659,6 +1707,16 @@ void qc_key_down(unsigned int key)
     case 'B':
         if (io.KeyCtrl) {
             HandleStopCompiling();
+        }
+        break;
+    case 'E':
+        if (io.KeyCtrl) {
+            if (io.KeyShift) {
+                HandleOpenEditor();
+            }
+            else {
+                HandleOpenMapInEditor();
+            }
         }
         break;
     case 'R':

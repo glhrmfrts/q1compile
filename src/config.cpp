@@ -7,10 +7,11 @@
 #include "common.h"
 #include "path.h"
 
-static const char* config_path_names[] = {
+static const char* g_config_path_names[] = {
     "tools_dir",
     "work_dir",
     "out_dir",
+    "editor_exe",
     "engine_exe",
     "mapsrc_file"
 };
@@ -170,13 +171,16 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "quake_output_enabled") {
         p.ParseBool(config.quake_output_enabled);
     }
+    else if (name == "open_editor_on_launch") {
+        p.ParseBool(config.open_editor_on_launch);
+    }
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
     }
     else {
         int idx = -1;
         for (int i = 0; i < PATH_COUNT; i++) {
-            if (!std::strcmp(config_path_names[i], name.c_str())) {
+            if (!std::strcmp(g_config_path_names[i], name.c_str())) {
                 idx = i;
                 break;
             }
@@ -264,7 +268,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "config_name", config.config_name);
 
     for (int i = 0; i < PATH_COUNT; i++) {
-        WriteVar(fh, config_path_names[i], config.config_paths[i]);
+        WriteVar(fh, g_config_path_names[i], config.config_paths[i]);
     }
 
     WriteVar(fh, "qbsp_args", config.qbsp_args);
@@ -276,6 +280,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "vis_enabled", 0 != (config.tool_flags & CONFIG_FLAG_VIS_ENABLED));
     WriteVar(fh, "watch_map_file", config.watch_map_file);
     WriteVar(fh, "quake_output_enabled", config.quake_output_enabled);
+    WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
     WriteVar(fh, "selected_preset", config.selected_preset);
 }
 

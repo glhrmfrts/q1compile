@@ -124,3 +124,37 @@ bool SubProcess::Good()
 {
     return static_cast<native_impl::SubProcess*>(handle)->good;
 }
+
+bool StartDetachedProcess(const std::string& cmd, const std::string& pwd)
+{
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    ZeroMemory( &pi, sizeof(pi) );
+
+    BOOL success = CreateProcessA(
+        NULL,
+        (LPSTR)cmd.c_str(),
+        NULL,
+        NULL,
+        TRUE,
+        CREATE_NO_WINDOW,
+        NULL,
+        (LPCSTR)(pwd.empty() ? NULL : pwd.c_str()),
+        &si,
+        &pi
+    );
+    if (!success) {
+        return false;
+    }
+
+    // Wait until child process exits.
+    // WaitForSingleObject( pi.hProcess, INFINITE );
+
+    // Close process and thread handles. 
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+    return true;
+}

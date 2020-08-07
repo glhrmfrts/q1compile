@@ -14,3 +14,5 @@ struct SubProcess
 
     void* handle;
 };
+
+bool StartDetachedProcess(const std::string& cmd, const std::string& pwd);
