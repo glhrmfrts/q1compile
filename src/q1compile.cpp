@@ -131,6 +131,14 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
 
 static void HandleFileBrowserCallback();
 
+static void ReportCopy(const std::string& from_path, const std::string& to_path)
+{
+    g_app.compile_output.append("Copied ");
+    g_app.compile_output.append(from_path);
+    g_app.compile_output.append(" to ");
+    g_app.compile_output.append(to_path);
+    g_app.compile_output.append("\n");
+}
 
 /*
 =================
@@ -205,11 +213,7 @@ struct CompileJob
         StrReplace(work_lit, ".map", ".lit");
 
         if (Copy(source_map, work_map)) {
-            g_app.compile_output.append("Copied ");
-            g_app.compile_output.append(source_map);
-            g_app.compile_output.append(" to ");
-            g_app.compile_output.append(work_map);
-            g_app.compile_output.append("\n");
+            ReportCopy(source_map, work_map);
         }
         else {
             return;
@@ -252,6 +256,20 @@ struct CompileJob
             if (!RunTool("vis.exe", args))
                 return;
 
+            {
+                // copy .pts file if generated
+                std::string work_pts = work_bsp;
+                while (StrReplace(work_pts, ".bsp", ".pts")) {}
+
+                if (PathExists(work_pts)) {
+                    std::string source_pts = source_map;
+                    while (StrReplace(source_pts, ".map", ".pts")) {}
+                    if (Copy(work_pts, source_pts)) {
+                        ReportCopy(work_pts, source_pts);
+                    }
+                }
+            }
+
             g_app.compile_output.append("Finished vis\n");
             g_app.compile_output.append("------------------------------------------------\n");
         }
@@ -262,11 +280,7 @@ struct CompileJob
 
         if (copy_bsp && PathExists(work_bsp)) {
             if (Copy(work_bsp, out_bsp)) {
-                g_app.compile_output.append("Copied ");
-                g_app.compile_output.append(work_bsp);
-                g_app.compile_output.append(" to ");
-                g_app.compile_output.append(out_bsp);
-                g_app.compile_output.append("\n");
+                ReportCopy(work_bsp, out_bsp);
             }
             else {
                 return;
@@ -275,11 +289,7 @@ struct CompileJob
         
         if (copy_lit && PathExists(work_lit)) {
             if (Copy(work_lit, out_lit)) {
-                g_app.compile_output.append("Copied ");
-                g_app.compile_output.append(work_lit);
-                g_app.compile_output.append(" to ");
-                g_app.compile_output.append(out_lit);
-                g_app.compile_output.append("\n");
+                ReportCopy(work_lit, out_lit);
             }
         }
 
@@ -783,6 +793,19 @@ static void HandlePathSelect(ConfigPath path)
     }
 }
 
+static void HandlePathOpen(ConfigPath path)
+{
+    std::string arg = PathFromNative(g_app.current_config.config_paths[path]);
+    if (!ShouldConfigPathBeDirectory(path)) {
+        arg = PathDirectory(arg);
+    }
+    if (!StartDetachedProcess("explorer " + PathToNative(arg), "")) {
+        PrintError("Error opening path: ");
+        PrintError(g_app.current_config.config_paths[path].c_str());
+        PrintError("\n");
+    }
+}
+
 static void HandleFileBrowserCallback()
 {
     switch (g_app.fb_callback) {
@@ -1169,6 +1192,10 @@ static bool DrawFileInput(const char* label, ConfigPath path, float spacing)
     if (ImGui::Button("...")) {
         HandlePathSelect(path);
     }
+    ImGui::SameLine();
+    if (ImGui::Button(u8"\uef20")) {
+        HandlePathOpen(path);
+    }
     ImGui::PopID();
 
     return changed;
@@ -1178,7 +1205,7 @@ static void DrawPresetCombo()
 {
     ImGui::Text("Preset: "); ImGui::SameLine();
 
-    DrawSpacing(40, 0); ImGui::SameLine();
+    DrawSpacing(42, 0); ImGui::SameLine();
 
     std::string selected_preset_name = "None";
     if (g_app.current_config.selected_preset_index > 0) {
@@ -1526,7 +1553,7 @@ static void DrawMainContent()
         DrawSpacing(0, 5);
 
         if (DrawTextInput("Config Name: ", g_app.current_config.config_name, 5)) g_app.modified = true;
-        DrawTextInput("Path: ", g_app.user_config.loaded_config, 54, ImGuiInputTextFlags_ReadOnly);
+        DrawTextInput("Path: ", g_app.user_config.loaded_config, 55, ImGuiInputTextFlags_ReadOnly);
 
         ImGui::TreePop();
     }
@@ -1560,7 +1587,7 @@ static void DrawMainContent()
             g_app.modified = true;
             g_app.modified_flags = true;
         }
-        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app.current_config.light_args, 38)) {
+        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app.current_config.light_args, 37)) {
             g_app.modified = true;
             g_app.modified_flags = true;
         }
@@ -1568,7 +1595,7 @@ static void DrawMainContent()
             g_app.modified = true;
             g_app.modified_flags = true;
         }
-        if (DrawToolParams("QUAKE", 0, g_app.current_config.quake_args, 38)) {
+        if (DrawToolParams("QUAKE", 0, g_app.current_config.quake_args, 41)) {
             g_app.modified = true;
         }
         ImGui::TreePop();

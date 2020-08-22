@@ -12,6 +12,9 @@
 #include "q1compile.h"
 #include "../build/src/resource.h"
 
+#include "fonts/droid_sans_mono.cpp"
+#include "fonts/icofont.cpp"
+
 // Data
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -85,6 +88,21 @@ int __stdcall WinMain(
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
+
+    // Combine multiple fonts into one (e.g. for icon fonts)
+    {
+        static ImWchar icon_ranges[] = { 0xeea0, 0xf02e, 0 };
+        
+        ImFontConfig config = {};
+        config.FontDataOwnedByAtlas = false;
+        io.Fonts->AddFontFromMemoryTTF((void*)droid_sans_mono_data, droid_sans_mono_size, 16.0f, &config);
+
+        ImFontConfig icon_config = {};
+        icon_config.MergeMode = true;
+        icon_config.FontDataOwnedByAtlas = false;
+        ImFont* font = io.Fonts->AddFontFromMemoryTTF((void*)icofont_data, icofont_size, 16.0f, &icon_config, icon_ranges); // Merge icon font
+        IM_ASSERT(font != NULL);
+    }
 
     // Our state
     bool show_demo_window = true;
