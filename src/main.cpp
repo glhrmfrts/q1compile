@@ -137,6 +137,8 @@ int __stdcall WinMain(
             PostQuitMessage(0);
         }
 
+        //ImGui::ShowDemoWindow();
+
         // Rendering
         ImGui::EndFrame();
         g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);

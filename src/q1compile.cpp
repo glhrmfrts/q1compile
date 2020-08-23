@@ -21,6 +21,8 @@
 
 typedef int FileBrowserFlags;
 
+typedef std::function<void(bool)> UnsavedChangesCallback;
+
 enum FileBrowserFlag {
     FB_FLAG_LOAD = 0x1,
     FB_FLAG_SAVE = 0x2,
@@ -48,6 +50,7 @@ struct AppState {
     std::atomic_bool             stop_compiling;
     std::string                  compile_status;
     bool                         last_job_ran_quake;
+    std::atomic_bool             map_has_leak = false;
 
     FileBrowserCallback          fb_callback;
     std::string                  fb_path;
@@ -58,10 +61,12 @@ struct AppState {
     std::atomic_bool             console_auto_scroll = true;
     std::atomic_bool             console_lock_scroll = false;
 
+    UnsavedChangesCallback       unsaved_changes_callback;
+
     bool modified = false;
     bool modified_flags = false;
     bool show_preset_window = false;
-    bool show_confirm_new_window = false;
+    bool show_unsaved_changes_window = false;
     bool show_help_window = false;
     int preset_to_export = 0;
 
@@ -181,6 +186,7 @@ struct CompileJob
         StrReplace(work_bsp, ".map", ".bsp");
         StrReplace(work_lit, ".map", ".lit");
         
+        g_app.map_has_leak = false;
         g_app.compiling = true;
         g_app.compile_status = "Copying source file to work dir...";
         ScopeGuard end{ [work_bsp, source_map]() {
@@ -198,6 +204,8 @@ struct CompileJob
                     while (StrReplace(source_pts, ".map", ".pts")) {}
                     if (Copy(work_pts, source_pts)) {
                         ReportCopy(work_pts, source_pts);
+                        RemovePath(work_pts);
+                        g_app.map_has_leak = true;
                     }
                 }
             }
@@ -520,6 +528,7 @@ static bool LoadConfig(const std::string& path)
         return false;
     }
 
+    g_app.map_has_leak = false;
     g_app.current_config = ReadConfig(path);
     g_app.current_config.selected_preset_index = FindPresetIndex(g_app.current_config.selected_preset) + 1;
     if (g_app.current_config.selected_preset_index > 0) {
@@ -665,6 +674,12 @@ bool SelectFileDialog(const char* filter, FileBrowserFlags flags, std::string& o
     return false;
 }
 
+void ShowUnsavedChangesWindow(UnsavedChangesCallback cb)
+{
+    g_app.show_unsaved_changes_window = true;
+    g_app.unsaved_changes_callback = cb;
+}
+
 /*
 ===================
 UI Event Handlers
@@ -674,35 +689,53 @@ UI Event Handlers
 static void HandleNewConfig()
 {
     if (g_app.modified) {
-        g_app.show_confirm_new_window = true;
-        return;
+        ShowUnsavedChangesWindow([](bool saved) {
+            g_app.modified = false;
+            HandleNewConfig();
+        });
     }
-
-    AddRecentConfig(g_app.user_config.loaded_config);
-
-    g_app.current_config = {};
-    g_app.user_config.loaded_config = "";
-    WriteUserConfig(g_app.user_config);
+    else {
+        g_app.map_has_leak = false;
+        g_app.current_config = {};
+        g_app.user_config.loaded_config = "";
+        WriteUserConfig(g_app.user_config);
+    }
 }
 
 static void HandleLoadConfig()
 {
-    std::string pwd = PathDirectory(g_app.user_config.loaded_config);
-    std::string user_path = pwd;
-    FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
+    if (g_app.modified) {
+        ShowUnsavedChangesWindow([](bool saved) {
+            g_app.modified = false;
+            HandleLoadConfig();
+        });
+    }
+    else {
+        std::string pwd = PathDirectory(g_app.user_config.loaded_config);
+        std::string user_path = pwd;
+        FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
-    if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
-        g_app.fb_callback = FB_LOAD_CONFIG;
-        g_app.fb_path = user_path;
-        HandleFileBrowserCallback();
+        if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
+            g_app.fb_callback = FB_LOAD_CONFIG;
+            g_app.fb_path = user_path;
+            HandleFileBrowserCallback();
+        }
     }
 }
 
 static void HandleLoadRecentConfig(int i)
 {
-    const std::string& path = g_app.user_config.recent_configs[i];
-    if (!LoadConfig(path)) {
-        g_app.user_config.recent_configs.erase(g_app.user_config.recent_configs.begin() + i);
+    if (g_app.modified) {
+        ShowUnsavedChangesWindow([i](bool saved) {
+            g_app.modified = false;
+            HandleLoadRecentConfig(i);
+        });
+    }
+    else {
+        const std::string& path = g_app.user_config.recent_configs[i];
+        if (!LoadConfig(path)) {
+            g_app.user_config.recent_configs.erase(g_app.user_config.recent_configs.begin() + i);
+        }
     }
 }
 
@@ -819,20 +852,15 @@ static void HandleFileBrowserCallback()
         }
 
         if (PathExists(path)) {
-            if (path != g_app.user_config.loaded_config) {
-                AddRecentConfig(g_app.user_config.loaded_config);
+            if (LoadConfig(path)) {
+                AddRecentConfig(path);
             }
-            LoadConfig(path);
         }
     } break;
 
     case FB_SAVE_CONFIG: {
         std::string path = PathFromNative(g_app.fb_path);
         AddExtensionIfNone(path, ".cfg");
-
-        if (path != g_app.user_config.loaded_config) {
-            AddRecentConfig(g_app.user_config.loaded_config);
-        }
         SaveConfig(path);
     } break;
 
@@ -1038,11 +1066,29 @@ UI Drawing
 ====================
 */
 
+// Helper to display a little (?) mark which shows a tooltip when hovered.
+// In your own code you may want to display an actual icon if you are using a merged icon fonts (see docs/FONTS.md)
+static void DrawHelpMarker(const char* desc)
+{
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 static void DrawRecentConfigs()
 {
     int size = g_app.user_config.recent_configs.size();
     for (int i = size - 1; i >= 0; i--) {
-        std::string filename = PathFilename(g_app.user_config.recent_configs[i]);
+        const std::string& path = g_app.user_config.recent_configs[i];
+        if (path == g_app.user_config.loaded_config) continue;
+
+        std::string filename = PathFilename(path);
         if (ImGui::MenuItem(filename.c_str(), "", nullptr)) {
             HandleLoadRecentConfig(i);
         }
@@ -1061,17 +1107,17 @@ static void DrawMenuBar()
                 HandleLoadConfig();
             }
 
+            if (ImGui::BeginMenu("Recent Configs")) {
+                DrawRecentConfigs();
+                ImGui::EndMenu();
+            }
+
             if (ImGui::MenuItem("Save Config", "Ctrl+S", nullptr)) {
                 HandleSaveConfig();
             }
 
             if (ImGui::MenuItem("Save Config As...", "Ctrl+Shift+S", nullptr)) {
                 HandleSaveConfigAs();
-            }
-
-            if (g_app.user_config.recent_configs.size() > 0) {
-                ImGui::Separator();
-                DrawRecentConfigs();
             }
 
             ImGui::Separator();
@@ -1405,11 +1451,11 @@ static void DrawPresetWindow()
 
                         ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
 
-                        DrawTextInput("Name: ", preset.name, 23, flags);
+                        DrawTextInput("Name: ", preset.name, 24, flags);
 
-                        DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 14, flags);
-                        DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 7, flags);
-                        DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 21, flags);
+                        DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 13, flags);
+                        DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 5, flags);
+                        DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 20, flags);
                         //DrawPresetToolParams(preset, "QUAKE", 0, preset.quake_args, 8);
 
                         ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10, 0); ImGui::SameLine();
@@ -1471,46 +1517,52 @@ static void DrawPresetWindow()
     prev_show = g_app.show_preset_window;
 }
 
-static void DrawConfirmNewWindow()
+static void DrawUnsavedChangesWindow()
 {
     static bool prev_show;
 
-    if (g_app.show_confirm_new_window) {
+    if (g_app.show_unsaved_changes_window) {
         if (!prev_show) {
             ImGui::OpenPopup("Save Changes");
         }
 
         bool clicked_btn = false;
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-        if (ImGui::BeginPopupModal("Save Changes", &g_app.show_confirm_new_window, flags)) {
+        if (ImGui::BeginPopupModal("Save Changes", &g_app.show_unsaved_changes_window, flags)) {
             ImGui::Text("You have unsaved changes to your config, do you want to save?");
             DrawSeparator(5);
 
             if (ImGui::Button("Save")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
-                g_app.show_confirm_new_window = false;
+                g_app.show_unsaved_changes_window = false;
                 HandleSaveConfig();
+                g_app.unsaved_changes_callback(true);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Discard")) {
+            if (ImGui::Button("Don't save")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
-                g_app.show_confirm_new_window = false;
-                g_app.modified = false;
-                HandleNewConfig();
+                g_app.show_unsaved_changes_window = false;
+                g_app.unsaved_changes_callback(false);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+                clicked_btn = true;
+                g_app.show_unsaved_changes_window = false;
             }
             ImGui::EndPopup();
         }
 
         // Just closed
-        if (!g_app.show_confirm_new_window && !clicked_btn) {
+        if (!g_app.show_unsaved_changes_window && !clicked_btn) {
             g_app.modified = false;
             HandleNewConfig();
         }
     }
 
-    prev_show = g_app.show_confirm_new_window;
+    prev_show = g_app.show_unsaved_changes_window;
 }
 
 static void DrawCredits()
@@ -1609,12 +1661,20 @@ static void DrawMainContent()
             g_app.modified = true;
             g_app.map_file_watcher->SetEnabled(g_app.current_config.watch_map_file);
         }
+        ImGui::SameLine();
+        DrawHelpMarker("Watch the map source file for saves/changes and automatically compile. It will also compile when q1compile is launched.");
 
-        if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled))
+        if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled)) {
             g_app.modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker("Option to display the output from the Quake engine while it's running.");
 
-        if (ImGui::Checkbox("Open editor on launch", &g_app.current_config.open_editor_on_launch))
+        if (ImGui::Checkbox("Open editor on launch", &g_app.current_config.open_editor_on_launch)) {
             g_app.modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker("Open the map in the editor as soon as q1compile launches.");
 
         ImGui::TreePop();
     }
@@ -1623,6 +1683,10 @@ static void DrawMainContent()
 
     ImGui::Text("Status: "); ImGui::SameLine();
     ImGui::InputText("##status", &g_app.compile_status, ImGuiInputTextFlags_ReadOnly);
+    if (g_app.map_has_leak) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4{ 1.0f, 0.0f, 0.0f, 1.0 }, "Map has leak!");
+    }
 
     DrawSpacing(0, 10);
 
@@ -1634,7 +1698,7 @@ static void DrawMainContent()
 
     DrawHelpWindow();
 
-    DrawConfirmNewWindow();
+    DrawUnsavedChangesWindow();
 }
 
 static void DrawMainWindow()
@@ -1684,21 +1748,18 @@ void qc_init(void* pdata)
 
     g_app.user_config = ReadUserConfig();
     MigrateUserConfig(g_app.user_config);
-    if (g_app.user_config.loaded_config.empty()) {
-        g_app.show_help_window = true;
-    }
 
     for (auto& preset : g_app.user_config.tool_presets) {
         while (StrReplace(preset.name, "(built-in)", "")) {}
     }
     AddBuiltinPresets();
+
     if (!g_app.user_config.loaded_config.empty()) {
+        // Load the last config
         if (!LoadConfig(g_app.user_config.loaded_config)) {
             g_app.user_config.loaded_config = "";
         }
-    }
 
-    if (!g_app.user_config.loaded_config.empty()) {
         // If watching a map, compile on launch
         if (g_app.current_config.watch_map_file
             && !g_app.current_config.config_paths[PATH_MAP_SOURCE].empty()) {
@@ -1711,6 +1772,9 @@ void qc_init(void* pdata)
             && !g_app.current_config.config_paths[PATH_EDITOR_EXE].empty()) {
             HandleOpenMapInEditor();
         }
+    }
+    else {
+        g_app.show_help_window = true;
     }
 }
 
