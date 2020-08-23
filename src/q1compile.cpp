@@ -551,6 +551,7 @@ static bool LoadConfig(const std::string& path)
     g_app.last_loaded_config_name = g_app.current_config.config_name;
     WriteUserConfig(g_app.user_config);
 
+    g_app.map_file_watcher->SetEnabled(g_app.current_config.watch_map_file);
     HandleMapSourceChanged();
 
     g_app.modified = false;
