@@ -16,6 +16,7 @@
 #include "shell_command.h"
 #include "work_queue.h"
 #include "../include/imgui_markdown.h" // https://github.com/juliettef/imgui_markdown/
+#include "fonts/icofont.h"
 
 #define CONFIG_RECENT_COUNT 5
 
@@ -130,6 +131,15 @@ static std::vector<const char*> g_config_paths_filter = {
     "Executable Files (*.exe)\0*.exe\0",
     "Executable Files (*.exe)\0*.exe\0",
     "Map Source Files (*.map)\0*.map\0"
+};
+
+static std::vector<const char*> g_config_paths_help = {
+    "Where the compiler tools are (qbsp.exe, light.exe, vis.exe)",
+    "Temporary dir to work with files",
+    "Where the compiled .bsp and .lit files will be",
+    "The map editor executable (optional)",
+    "The Quake engine executable",
+    "The .map file to compile"
 };
 
 static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output = false);
@@ -1207,11 +1217,15 @@ static void DrawSeparator(float margin)
     DrawSpacing(0, margin);
 }
 
-static bool DrawTextInput(const char* label, std::string& str, float spacing, ImGuiInputTextFlags flags = 0)
+static bool DrawTextInput(const char* label, std::string& str, float spacing, ImGuiInputTextFlags flags = 0, const char* help = nullptr)
 {
     ImGui::Text(label);
     ImGui::SameLine();
     DrawSpacing(spacing, 0);
+    if (help) {
+        ImGui::SameLine();
+        DrawHelpMarker(help);
+    }
     ImGui::SameLine();
 
     if (flags & ImGuiInputTextFlags_ReadOnly) {
@@ -1231,7 +1245,7 @@ static bool DrawTextInput(const char* label, std::string& str, float spacing, Im
 
 static bool DrawFileInput(const char* label, ConfigPath path, float spacing)
 {
-    bool changed = DrawTextInput(label, g_app.current_config.config_paths[path], spacing);
+    bool changed = DrawTextInput(label, g_app.current_config.config_paths[path], spacing, 0, g_config_paths_help[path]);
     if (changed) {
         if (path == PATH_MAP_SOURCE) {
             HandleMapSourceChanged();
@@ -1245,7 +1259,7 @@ static bool DrawFileInput(const char* label, ConfigPath path, float spacing)
         HandlePathSelect(path);
     }
     ImGui::SameLine();
-    if (ImGui::Button(u8"\uef20")) {
+    if (ImGui::Button(ICOFONT_EXTERNAL)) {
         HandlePathOpen(path);
     }
     ImGui::PopID();
@@ -1257,7 +1271,8 @@ static void DrawPresetCombo()
 {
     ImGui::Text("Preset: "); ImGui::SameLine();
 
-    DrawSpacing(42, 0); ImGui::SameLine();
+    float offs = 9.0f;
+    DrawSpacing(42+offs, 0); ImGui::SameLine();
 
     std::string selected_preset_name = "None";
     if (g_app.current_config.selected_preset_index > 0) {
@@ -1610,8 +1625,9 @@ static void DrawMainContent()
     if (ImGui::TreeNode("Info")) {
         DrawSpacing(0, 5);
 
-        if (DrawTextInput("Config Name: ", g_app.current_config.config_name, 5)) g_app.modified = true;
-        DrawTextInput("Path: ", g_app.user_config.loaded_config, 55, ImGuiInputTextFlags_ReadOnly);
+        float offs = 9.0f;
+        if (DrawTextInput("Config Name: ", g_app.current_config.config_name, 4 + offs)) g_app.modified = true;
+        DrawTextInput("Path: ", g_app.user_config.loaded_config, 55 + offs, ImGuiInputTextFlags_ReadOnly);
 
         ImGui::TreePop();
     }
@@ -1622,13 +1638,13 @@ static void DrawMainContent()
     if (ImGui::TreeNode("Paths")) {
         DrawSpacing(0, 5);
 
-        float offs = 0.0f;
-        if (DrawFileInput("Tools Dir: ", PATH_TOOLS_DIR, 20 + offs)) g_app.modified = true;
-        if (DrawFileInput("Work Dir: ", PATH_WORK_DIR, 27 + offs)) g_app.modified = true;
-        if (DrawFileInput("Output Dir: ", PATH_OUTPUT_DIR, 13.5f + offs)) g_app.modified = true;
-        if (DrawFileInput("Editor Exe: ", PATH_EDITOR_EXE, 13.5f + offs)) g_app.modified = true;
-        if (DrawFileInput("Engine Exe: ", PATH_ENGINE_EXE, 13.5f + offs)) g_app.modified = true;
-        if (DrawFileInput("Map Source: ", PATH_MAP_SOURCE, 13.5f + offs)) g_app.modified = true;
+        float offs = -15.0f;
+        if (DrawFileInput("Tools Dir:", PATH_TOOLS_DIR, 20 + offs)) g_app.modified = true;
+        if (DrawFileInput("Work Dir:", PATH_WORK_DIR, 27 + offs)) g_app.modified = true;
+        if (DrawFileInput("Output Dir:", PATH_OUTPUT_DIR, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Editor Exe:", PATH_EDITOR_EXE, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Engine Exe:", PATH_ENGINE_EXE, 13.5f + offs)) g_app.modified = true;
+        if (DrawFileInput("Map Source:", PATH_MAP_SOURCE, 13.5f + offs)) g_app.modified = true;
 
         ImGui::TreePop();
     }
@@ -1641,19 +1657,20 @@ static void DrawMainContent()
 
         DrawPresetCombo();
 
-        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, g_app.current_config.qbsp_args, 45)) {
+        float offs = 9.0f;
+        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, g_app.current_config.qbsp_args, 45 + offs)) {
             g_app.modified = true;
             g_app.modified_flags = true;
         }
-        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app.current_config.light_args, 37)) {
+        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app.current_config.light_args, 37 + offs)) {
             g_app.modified = true;
             g_app.modified_flags = true;
         }
-        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, g_app.current_config.vis_args, 52)) {
+        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, g_app.current_config.vis_args, 52 + offs)) {
             g_app.modified = true;
             g_app.modified_flags = true;
         }
-        if (DrawToolParams("QUAKE", 0, g_app.current_config.quake_args, 41)) {
+        if (DrawToolParams("QUAKE", 0, g_app.current_config.quake_args, 41 + offs)) {
             g_app.modified = true;
         }
         ImGui::TreePop();
@@ -1692,7 +1709,7 @@ static void DrawMainContent()
     ImGui::InputText("##status", &g_app.compile_status, ImGuiInputTextFlags_ReadOnly);
     if (g_app.map_has_leak) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4{ 1.0f, 0.0f, 0.0f, 1.0 }, "Map has leak!");
+        ImGui::TextColored(ImVec4{ 1.0f, 0.0f, 0.0f, 1.0 }, ICOFONT_EXCLAMATION_TRI " Map has leak");
     }
 
     DrawSpacing(0, 10);
