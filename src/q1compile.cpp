@@ -171,13 +171,36 @@ struct CompileJob
     void operator()()
     {
         auto time_begin = std::chrono::system_clock::now();
+
+        std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
+        std::string work_map = PathJoin(PathFromNative(config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
+        std::string work_bsp = work_map;
+        std::string work_lit = work_map;
+        bool copy_bsp = false;
+        bool copy_lit = false;
+        StrReplace(work_bsp, ".map", ".bsp");
+        StrReplace(work_lit, ".map", ".lit");
         
         g_app.compiling = true;
         g_app.compile_status = "Copying source file to work dir...";
-        ScopeGuard end{ []() {
+        ScopeGuard end{ [work_bsp, source_map]() {
             g_app.compiling = false;
             g_app.stop_compiling = false;
             g_app.console_lock_scroll = false;
+
+            {
+                // copy .pts file if generated
+                std::string work_pts = work_bsp;
+                while (StrReplace(work_pts, ".bsp", ".pts")) {}
+
+                if (PathExists(work_pts)) {
+                    std::string source_pts = source_map;
+                    while (StrReplace(source_pts, ".map", ".pts")) {}
+                    if (Copy(work_pts, source_pts)) {
+                        ReportCopy(work_pts, source_pts);
+                    }
+                }
+            }
 
             if (g_app.compile_status.find("Finished") == std::string::npos) {
                 g_app.compile_status = "Stopped.";
@@ -201,16 +224,6 @@ struct CompileJob
             g_app.compile_output.append(" vis=false");
 
         g_app.compile_output.append("\n");
-
-        std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
-        std::string work_map = PathJoin(PathFromNative(config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
-        std::string work_bsp = work_map;
-        std::string work_lit = work_map;
-        bool copy_bsp = false;
-        bool copy_lit = false;
-
-        StrReplace(work_bsp, ".map", ".bsp");
-        StrReplace(work_lit, ".map", ".lit");
 
         if (Copy(source_map, work_map)) {
             ReportCopy(source_map, work_map);
@@ -255,20 +268,6 @@ struct CompileJob
             std::string args = config.vis_args + " " + work_bsp;
             if (!RunTool("vis.exe", args))
                 return;
-
-            {
-                // copy .pts file if generated
-                std::string work_pts = work_bsp;
-                while (StrReplace(work_pts, ".bsp", ".pts")) {}
-
-                if (PathExists(work_pts)) {
-                    std::string source_pts = source_map;
-                    while (StrReplace(source_pts, ".map", ".pts")) {}
-                    if (Copy(work_pts, source_pts)) {
-                        ReportCopy(work_pts, source_pts);
-                    }
-                }
-            }
 
             g_app.compile_output.append("Finished vis\n");
             g_app.compile_output.append("------------------------------------------------\n");
