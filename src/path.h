@@ -4,6 +4,8 @@
 
 std::string qc_GetAppDir();
 
+std::string qc_GetTempDir();
+
 std::string qc_GetUserName();
 
 std::string PathFromNative(std::string path);

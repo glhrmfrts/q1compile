@@ -695,8 +695,15 @@ static void HandleNewConfig()
         });
     }
     else {
+        std::string work_dir = PathJoin(qc_GetTempDir(), "q1compile");
+        if (!PathExists(work_dir)) {
+            if (!CreatePath(work_dir)) {
+                PrintError("Could not create work dir!\n");
+            }
+        }
         g_app.map_has_leak = false;
         g_app.current_config = {};
+        g_app.current_config.config_paths[PATH_WORK_DIR] = work_dir;
         g_app.user_config.loaded_config = "";
         WriteUserConfig(g_app.user_config);
     }
@@ -1774,6 +1781,7 @@ void qc_init(void* pdata)
         }
     }
     else {
+        HandleNewConfig();
         g_app.show_help_window = true;
     }
 }

@@ -45,6 +45,14 @@ std::string qc_GetAppDir()
     return PathDirectory(PathFromNative(Narrow(dirname, dirname_len)));
 }
 
+std::string qc_GetTempDir()
+{
+    char dirname[UNLEN+1];
+    DWORD dirname_len = UNLEN+1;
+    dirname_len = GetTempPathA(dirname_len, dirname);
+    return PathFromNative(std::string(dirname, dirname_len));
+}
+
 std::string qc_GetUserName()
 {
     wchar_t username[UNLEN+1];
