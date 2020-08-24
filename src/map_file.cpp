@@ -107,6 +107,18 @@ struct MapFileParser
     State _state = Default;
 };
 
+static bool Contains(std::string_view hay, std::string_view ned)
+{
+    return hay.find(ned) != std::string::npos;
+}
+
+static bool ShouldIgnoreFieldForDiff(std::string_view field)
+{
+    return (
+        (field == "_tb_group")
+    );
+}
+
 MapFile::MapFile(const std::string& path)
 {
     ReadFileText(path, _text);
@@ -133,4 +145,83 @@ std::string MapFile::GetTBMod() const {
     else {
         return str;
     }
+}
+
+std::string MapFile::GetBrushContent() const {
+    std::string buf;
+    for (const auto& ent : _entities) {
+        for (const auto& content : ent.brush_content) {
+            buf.append(content);
+        }
+    }
+    return buf;
+}
+
+std::string MapFile::GetEntityContent() const {
+    std::string buf;
+    for (const auto& ent : _entities) {
+        if (!Contains(ent.fields.at("classname"), "light") && (ent.brush_content.size() == 0)) {
+            for (const auto& field : ent.fields) {
+                if (!ShouldIgnoreFieldForDiff(field.first)) {
+                    buf.append(field.first);
+                    buf.append(field.second);
+                }
+            }
+        }
+    }
+    return buf;
+}
+
+std::string MapFile::GetLightContent() const {
+    std::string buf;
+    for (const auto& ent : _entities) {
+        if (Contains(ent.fields.at("classname"), "light") && (ent.brush_content.size() == 0)) {
+            for (const auto& field : ent.fields) {
+                if (!ShouldIgnoreFieldForDiff(field.first)) {
+                    buf.append(field.first);
+                    buf.append(field.second);
+                }
+            }
+        }
+    }
+    return buf;
+}
+
+static std::string GetDiffFlagName(MapDiffFlags f)
+{
+    switch (f) {
+    case MAP_DIFF_BRUSHES:
+        return "brushes";
+    case MAP_DIFF_ENTS:
+        return "ents";
+    case MAP_DIFF_LIGHTS:
+        return "lights";
+    }
+    return "none";
+}
+
+static MapDiffFlags GetFlagForDiffContent(std::string ca, std::string cb, MapDiffFlags flag)
+{
+    /*
+    std::string fna = GetDiffFlagName(flag) + "_a.txt";
+    std::string fnb = GetDiffFlagName(flag) + "_b.txt";
+    WriteFileText(fna, ca);
+    WriteFileText(fnb, cb);
+    */
+
+    if (ca != cb) {
+        return flag;
+    }
+    else {
+        return MAP_DIFF_NONE;
+    }
+}
+
+MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b)
+{
+    MapDiffFlags flags = MAP_DIFF_NONE;
+    flags |= GetFlagForDiffContent(a.GetBrushContent(), b.GetBrushContent(), MAP_DIFF_BRUSHES);
+    flags |= GetFlagForDiffContent(a.GetEntityContent(), b.GetEntityContent(), MAP_DIFF_ENTS);
+    flags |= GetFlagForDiffContent(a.GetLightContent(), b.GetLightContent(), MAP_DIFF_LIGHTS);
+    return flags;
 }

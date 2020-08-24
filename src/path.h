@@ -34,4 +34,6 @@ bool RemovePath(const std::string& path);
 
 bool ReadFileText(const std::string& path, std::string& str);
 
+bool WriteFileText(const std::string& path, const std::string& str);
+
 unsigned long long GetFileModifiedTime(const std::string& path);

@@ -156,9 +156,21 @@ static void ReportCopy(const std::string& from_path, const std::string& to_path)
     g_app.compile_output.append("\n");
 }
 
-static std::pair<std::string, std::string> GetMapDiffArgs(const MapFile& filea, const MapFile& fileb)
+static std::pair<std::string, std::string> GetMapDiffArgs(const MapFile& map_a, const MapFile& map_b)
 {
-    return std::make_pair("", "");
+    auto flags = GetDiffFlags(map_a, map_b);
+    if (flags & MAP_DIFF_BRUSHES) {
+        return std::make_pair("", "");
+    }
+    else if (flags & MAP_DIFF_LIGHTS) {
+        return std::make_pair("-onlyents", "");
+    }
+    else if (flags & MAP_DIFF_ENTS) {
+        return std::make_pair("-onlyents", "-onlyents");
+    }
+    else {
+        return std::make_pair("", "");
+    }
 }
 
 /*
@@ -255,7 +267,9 @@ struct CompileJob
             PrintError("Could not read map file!\n");
         }
         else {
-            std::tie(diff_qbsp_args, diff_light_args) = GetMapDiffArgs(*g_app.map_file, *map_file);
+            if (g_app.map_file.get()) {
+                std::tie(diff_qbsp_args, diff_light_args) = GetMapDiffArgs(*g_app.map_file, *map_file);
+            }
             g_app.map_file = std::move(map_file);
         }
 
@@ -273,7 +287,7 @@ struct CompileJob
 
             copy_bsp = true;
 
-            std::string args = config.qbsp_args + " " + work_map;
+            std::string args = config.qbsp_args + " " + diff_qbsp_args + " " + work_map;
             if (!RunTool("qbsp.exe", args))
                 return;
 
@@ -287,7 +301,7 @@ struct CompileJob
             g_app.compile_output.append("Starting light\n");
 
             copy_lit = true;
-            std::string args = config.light_args + " " + work_bsp;
+            std::string args = config.light_args + " " + diff_light_args + " " + work_bsp;
             if (!RunTool("light.exe", args))
                 return;
 
@@ -448,7 +462,6 @@ static void StartCompileJob(const Config& cfg, bool run_quake)
     }
 
     g_app.last_job_ran_quake = run_quake;
-
     g_app.compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
 }
 
@@ -470,7 +483,12 @@ static bool IsExtension(const std::string& path, const std::string& extension)
 
 static void HandleMapSourceChanged()
 {
-    g_app.map_file_watcher->SetPath(g_app.current_config.config_paths[PATH_MAP_SOURCE]);
+    const std::string& path = g_app.current_config.config_paths[PATH_MAP_SOURCE];
+    g_app.map_file_watcher->SetPath(path);
+    g_app.map_file = std::make_unique<MapFile>(path);
+    if (!g_app.map_file->Good()) {
+        g_app.map_file = nullptr;
+    }
 }
 
 static void SetConfigPath(ConfigPath path, const std::string& value)
@@ -486,7 +504,7 @@ static void AddRecentConfig(const std::string& path)
 {
     if (path.empty()) return;
 
-    for (int i = 0; i < g_app.user_config.recent_configs.size(); i++) {
+    for (size_t i = 0; i < g_app.user_config.recent_configs.size(); i++) {
         if (path == g_app.user_config.recent_configs[i]) return;
     }
 
@@ -734,6 +752,7 @@ static void HandleNewConfig()
                 PrintError("Could not create work dir!\n");
             }
         }
+        g_app.map_file = nullptr;
         g_app.map_has_leak = false;
         g_app.current_config = {};
         g_app.current_config.config_paths[PATH_WORK_DIR] = work_dir;
@@ -1799,7 +1818,6 @@ void qc_init(void* pdata)
 
     g_app.map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
     g_app.compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
-    //fb = std::make_unique<ImGui::FileBrowser>();
     g_app.compile_status = "Doing nothing.";
 
     g_app.user_config = ReadUserConfig();

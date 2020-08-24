@@ -301,6 +301,15 @@ bool ReadFileText(const std::string& path, std::string& str)
     return true;
 }
 
+bool WriteFileText(const std::string& path, const std::string& str)
+{
+    std::FILE* const fh = _wfopen(Widen(path).c_str(), L"w");
+    ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+
+    std::fwrite(str.data(), sizeof(char), str.size(), fh);
+    return true;
+}
+
 #ifdef _WIN32
 static unsigned long long FileTimeToUint64(FILETIME *FileTime)
 {
