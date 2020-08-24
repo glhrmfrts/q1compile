@@ -156,21 +156,25 @@ static void ReportCopy(const std::string& from_path, const std::string& to_path)
     g_app.compile_output.append("\n");
 }
 
-static std::pair<std::string, std::string> GetMapDiffArgs(const MapFile& map_a, const MapFile& map_b)
+static ToolPreset GetMapDiffArgs(const MapFile& map_a, const MapFile& map_b)
 {
+    ToolPreset pre = {};
     auto flags = GetDiffFlags(map_a, map_b);
+
     if (flags & MAP_DIFF_BRUSHES) {
-        return std::make_pair("", "");
+        pre.flags |= CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED | CONFIG_FLAG_VIS_ENABLED;
     }
     else if (flags & MAP_DIFF_LIGHTS) {
-        return std::make_pair("-onlyents", "");
+        pre.flags |= CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED;
+        pre.qbsp_args = "-onlyents";
     }
     else if (flags & MAP_DIFF_ENTS) {
-        return std::make_pair("-onlyents", "-onlyents");
+        pre.flags |= CONFIG_FLAG_QBSP_ENABLED | CONFIG_FLAG_LIGHT_ENABLED;
+        pre.qbsp_args = "-onlyents";
+        pre.light_args = "-onlyents";
     }
-    else {
-        return std::make_pair("", "");
-    }
+    
+    return pre;
 }
 
 /*
@@ -183,6 +187,7 @@ struct CompileJob
 {
     Config config;
     bool run_quake;
+    bool ignore_diff;
 
     bool RunTool(const std::string& exe, const std::string& args)
     {
@@ -243,32 +248,43 @@ struct CompileJob
             }
         } };
 
-        g_app.compile_output.append("Starting to compile:");
-        if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED)
-            g_app.compile_output.append(" qbsp=true");
-        else
-            g_app.compile_output.append(" qbsp=false");
+        auto ReportCompileParams = [this](const std::string& name) {
+            g_app.compile_output.append(name);
+            if (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED)
+                g_app.compile_output.append(" qbsp=true");
+            else
+                g_app.compile_output.append(" qbsp=false");
 
-        if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED)
-            g_app.compile_output.append(" light=true");
-        else
-            g_app.compile_output.append(" light=false");
+            if (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED)
+                g_app.compile_output.append(" light=true");
+            else
+                g_app.compile_output.append(" light=false");
 
-        if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED)
-            g_app.compile_output.append(" vis=true");
-        else
-            g_app.compile_output.append(" vis=false");
+            if (config.tool_flags & CONFIG_FLAG_VIS_ENABLED)
+                g_app.compile_output.append(" vis=true");
+            else
+                g_app.compile_output.append(" vis=false");
 
-        g_app.compile_output.append("\n");
+            g_app.compile_output.append("\n");
+        };
+        ReportCompileParams("Starting to compile:");
 
-        std::string diff_qbsp_args, diff_light_args;
         auto map_file = std::make_unique<MapFile>(source_map);
         if (!map_file->Good()) {
-            PrintError("Could not read map file!\n");
+            g_app.compile_output.append("Could not read map file!\n");
         }
         else {
-            if (g_app.map_file.get()) {
-                std::tie(diff_qbsp_args, diff_light_args) = GetMapDiffArgs(*g_app.map_file, *map_file);
+            if (g_app.map_file.get() && g_app.current_config.auto_apply_onlyents && !this->ignore_diff) {
+                g_app.compile_output.append("Doing map diff...\n");
+
+                ToolPreset diff_pre = GetMapDiffArgs(*g_app.map_file, *map_file);
+                config.tool_flags = diff_pre.flags;
+                config.qbsp_args.append(" " + diff_pre.qbsp_args);
+                config.light_args.append(" " + diff_pre.light_args);
+
+                ReportCompileParams("Map diff results:");
+                g_app.compile_output.append("Diff QBSP args: " + diff_pre.qbsp_args + "\n");
+                g_app.compile_output.append("Diff LIGHT args: " + diff_pre.light_args + "\n");
             }
             g_app.map_file = std::move(map_file);
         }
@@ -287,13 +303,12 @@ struct CompileJob
 
             copy_bsp = true;
 
-            std::string args = config.qbsp_args + " " + diff_qbsp_args + " " + work_map;
+            std::string args = config.qbsp_args + " " + work_map;
             if (!RunTool("qbsp.exe", args))
                 return;
 
             g_app.compile_output.append("Finished qbsp\n");
             g_app.compile_output.append("------------------------------------------------\n");
-
         }
         if (g_app.stop_compiling) return;
 
@@ -301,7 +316,7 @@ struct CompileJob
             g_app.compile_output.append("Starting light\n");
 
             copy_lit = true;
-            std::string args = config.light_args + " " + diff_light_args + " " + work_bsp;
+            std::string args = config.light_args + " " + work_bsp;
             if (!RunTool("light.exe", args))
                 return;
 
@@ -451,7 +466,7 @@ static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
     ReadToMutexCharBuffer(proc, nullptr, &g_app.compile_output);
 }
 
-static void StartCompileJob(const Config& cfg, bool run_quake)
+static void StartCompileJob(const Config& cfg, bool run_quake, bool ignore_diff = false)
 {
     g_app.console_auto_scroll = true;
     g_app.console_lock_scroll = true;
@@ -462,7 +477,7 @@ static void StartCompileJob(const Config& cfg, bool run_quake)
     }
 
     g_app.last_job_ran_quake = run_quake;
-    g_app.compile_queue->AddWork(0, CompileJob{ cfg, run_quake });
+    g_app.compile_queue->AddWork(0, CompileJob{ cfg, run_quake, ignore_diff });
 }
 
 static void AddExtensionIfNone(std::string& path, const std::string& extension)
@@ -847,10 +862,10 @@ static void HandleRun()
 
     if (!g_app.last_job_ran_quake) {
         // Instead of stopping the current compilation, just add the job to the queue
-        g_app.compile_queue->AddWork(0, CompileJob{ job_config, true });
+        g_app.compile_queue->AddWork(0, CompileJob{ job_config, true, true });
     }
     else {
-        StartCompileJob(job_config, true);
+        StartCompileJob(job_config, true, true);
     }
 }
 
@@ -1737,6 +1752,19 @@ static void DrawMainContent()
         DrawHelpMarker(
             "Use the '_tb_mod' worldspawn field as the '-game' argument for the Quake engine. "
             "In case multiple mods were used, the first one is picked. This option only works if TrenchBroom was used as the editor."
+        );
+
+        if (ImGui::Checkbox("Apply -onlyents automatically (experimental)", &g_app.current_config.auto_apply_onlyents)) {
+            g_app.modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker(
+            "Apply the -onlyents argument to QBSP and/or LIGHT depending on what has changed in the map. "
+            "If a brush changes, it will run a full compile. "
+            "If a light changes, it will apply -onlyents to QBSP. "
+            "If only point entities changes, it will apply -onlyents to both QBSP and LIGHT. "
+            "If nothing changes, it will not compile unless the .bsp file is deleted in the Output Dir. "
+            "You can also force a full compile by using Ctrl+Shift+X. "
         );
 
         if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled)) {

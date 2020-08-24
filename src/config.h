@@ -34,6 +34,7 @@ struct Config
 
     bool watch_map_file;
     bool use_map_mod;
+    bool auto_apply_onlyents;
     bool quake_output_enabled;
     bool open_editor_on_launch;
     int tool_flags;
@@ -48,8 +49,8 @@ struct ToolPreset
     std::string qbsp_args;
     std::string light_args;
     std::string vis_args;
-    int flags;
-    bool builtin;
+    int flags = 0;
+    bool builtin = false;
 };
 
 /// UserConfig gets saved to the user directory
