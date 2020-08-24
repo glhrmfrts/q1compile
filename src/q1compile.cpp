@@ -10,6 +10,7 @@
 #include "console.h"
 #include "config.h"
 #include "file_watcher.h"
+#include "map_file.h"
 #include "mutex_char_buffer.h"
 #include "path.h"
 #include "sub_process.h"
@@ -56,7 +57,7 @@ struct AppState {
     FileBrowserCallback          fb_callback;
     std::string                  fb_path;
 
-    //std::unique_ptr<MapFile>     map_file;
+    std::unique_ptr<MapFile>     map_file;
     std::unique_ptr<FileWatcher> map_file_watcher;
 
     std::atomic_bool             console_auto_scroll = true;
@@ -155,6 +156,11 @@ static void ReportCopy(const std::string& from_path, const std::string& to_path)
     g_app.compile_output.append("\n");
 }
 
+static std::pair<std::string, std::string> GetMapDiffArgs(const MapFile& filea, const MapFile& fileb)
+{
+    return std::make_pair("", "");
+}
+
 /*
 =================
 Async jobs
@@ -243,6 +249,16 @@ struct CompileJob
 
         g_app.compile_output.append("\n");
 
+        std::string diff_qbsp_args, diff_light_args;
+        auto map_file = std::make_unique<MapFile>(source_map);
+        if (!map_file->Good()) {
+            PrintError("Could not read map file!\n");
+        }
+        else {
+            std::tie(diff_qbsp_args, diff_light_args) = GetMapDiffArgs(*g_app.map_file, *map_file);
+            g_app.map_file = std::move(map_file);
+        }
+
         if (Copy(source_map, work_map)) {
             ReportCopy(source_map, work_map);
         }
@@ -323,6 +339,12 @@ struct CompileJob
             g_app.compile_output.append("------------------------------------------------\n");
 
             std::string args = config.quake_args;
+
+            if (g_app.current_config.use_map_mod && g_app.map_file.get() && (args.find("-game") == std::string::npos)) {
+                args.append(" -game ");
+                args.append(g_app.map_file->GetTBMod());
+            }
+
             if (args.find("+map") == std::string::npos) {
                 std::string map_arg = PathFilename(out_bsp);
                 StrReplace(map_arg, ".bsp", "");
@@ -1688,6 +1710,15 @@ static void DrawMainContent()
         }
         ImGui::SameLine();
         DrawHelpMarker("Watch the map source file for saves/changes and automatically compile. It will also compile when q1compile is launched.");
+
+        if (ImGui::Checkbox("Use map mod as -game argument", &g_app.current_config.use_map_mod)) {
+            g_app.modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker(
+            "Use the '_tb_mod' worldspawn field as the '-game' argument for the Quake engine. "
+            "In case multiple mods were used, the first one is picked. This option only works if TrenchBroom was used as the editor."
+        );
 
         if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled)) {
             g_app.modified = true;
