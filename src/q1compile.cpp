@@ -274,7 +274,7 @@ struct CompileJob
             g_app.compile_output.append("Could not read map file!\n");
         }
         else {
-            if (g_app.map_file.get() && g_app.current_config.auto_apply_onlyents && !this->ignore_diff) {
+            if (g_app.map_file.get() && g_app.current_config.watch_map_file && g_app.current_config.auto_apply_onlyents && !this->ignore_diff) {
                 g_app.compile_output.append("Doing map diff...\n");
 
                 ToolPreset diff_pre = GetMapDiffArgs(*g_app.map_file, *map_file);
@@ -452,7 +452,7 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
         PrintError(": failed to open subprocess\n");
         return;
     }
-
+    
     auto output = &g_app.compile_output;
     if (suppress_output) {
         output = nullptr;
@@ -1745,26 +1745,29 @@ static void DrawMainContent()
         ImGui::SameLine();
         DrawHelpMarker("Watch the map source file for saves/changes and automatically compile. It will also compile when q1compile is launched.");
 
-        if (ImGui::Checkbox("Use map mod as -game argument", &g_app.current_config.use_map_mod)) {
+        if (g_app.current_config.watch_map_file) {
+            float spacing = ImGui::GetTreeNodeToLabelSpacing();
+            DrawSpacing(spacing, 0);ImGui::SameLine();
+            if (ImGui::Checkbox("Apply -onlyents automatically (experimental)", &g_app.current_config.auto_apply_onlyents)) {
+                g_app.modified = true;
+            }
+            ImGui::SameLine();
+            DrawHelpMarker(
+                "Apply the -onlyents argument to QBSP and/or LIGHT depending on what has changed in the map. "
+                "If a brush changes, it will run a full compile. "
+                "If a light changes, it will apply -onlyents to QBSP. "
+                "If only point entities changes, it will apply -onlyents to both QBSP and LIGHT. "
+            );
+            DrawSpacing(0, 5.0f);
+        }
+
+        if (ImGui::Checkbox("Use map mod as -game argument (TB only)", &g_app.current_config.use_map_mod)) {
             g_app.modified = true;
         }
         ImGui::SameLine();
         DrawHelpMarker(
             "Use the '_tb_mod' worldspawn field as the '-game' argument for the Quake engine. "
             "In case multiple mods were used, the first one is picked. This option only works if TrenchBroom was used as the editor."
-        );
-
-        if (ImGui::Checkbox("Apply -onlyents automatically (experimental)", &g_app.current_config.auto_apply_onlyents)) {
-            g_app.modified = true;
-        }
-        ImGui::SameLine();
-        DrawHelpMarker(
-            "Apply the -onlyents argument to QBSP and/or LIGHT depending on what has changed in the map. "
-            "If a brush changes, it will run a full compile. "
-            "If a light changes, it will apply -onlyents to QBSP. "
-            "If only point entities changes, it will apply -onlyents to both QBSP and LIGHT. "
-            "If nothing changes, it will not compile unless the .bsp file is deleted in the Output Dir. "
-            "You can also force a full compile by using Ctrl+Shift+X. "
         );
 
         if (ImGui::Checkbox("Quake console output enabled", &g_app.current_config.quake_output_enabled)) {
@@ -1831,9 +1834,9 @@ static void DrawMainWindow()
 }
 
 /*
-====================
+==============================
 Application lifetime functions
-====================
+==============================
 */
 
 void qc_init(void* pdata)

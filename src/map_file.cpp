@@ -160,7 +160,7 @@ std::string MapFile::GetBrushContent() const {
 std::string MapFile::GetEntityContent() const {
     std::string buf;
     for (const auto& ent : _entities) {
-        if (!Contains(ent.fields.at("classname"), "light") && (ent.brush_content.size() == 0)) {
+        if (!Contains(ent.fields.at("classname"), "light")) {
             for (const auto& field : ent.fields) {
                 if (!ShouldIgnoreFieldForDiff(field.first)) {
                     buf.append(field.first);
