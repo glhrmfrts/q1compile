@@ -1,4 +1,4 @@
-# q1compile v0.4.1
+# q1compile v0.5
 
 A GUI to work with Quake map compiling tools.
 
@@ -11,6 +11,7 @@ Path definitions:
 Tools Dir      - Where the compiler tools are (qbsp.exe, light.exe, vis.exe)
 Work Dir       - Temporary dir to work with files
 Output Dir     - Where the compiled .bsp and .lit files will be
+Editor Exe     - The editor executable (optional).
 Engine Exe     - The Quake engine executable of your choice
 Map Source     - The .map file to compile
 
@@ -54,6 +55,10 @@ there is a 'Actions...' selection dialog where you can:
     * Save Config          Ctrl + S              Saves the current configuration to the disk.
     * Save Config As...    Ctrl + Shift + S      Allows you to choose a new path for saving the configuration.
 
+  * Edit
+    * Open map in editor   Ctrl + E              Opens the map in the configured editor.
+    * Open editor          Ctrl + Shift + E      Opens the configured editor.
+
   * Compile
     * Compile and run      Ctrl + C              Compile the map and run Quake.
     * Compile only         Ctrl + Shift + C      Compile the map only.
@@ -72,7 +77,22 @@ there is a 'Actions...' selection dialog where you can:
 
 ## Issue Tracker
 
-You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues
+You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
+
+
+## Changes - v0.5
+
+  * Add "auto apply -onlyents" option, to perform a map diff and re-compile only the necessary steps (experimental feature).
+  * Add "use map mod" option to launch the game using the mod indicated in the map file (TB only).
+  * Detect presence of .pts file and indicate in the GUI if map is leaking.
+  * Copy the .pts file back to the source dir.
+  * Add help markers and tooltips for the various options in the GUI.
+  * Set the user's temp dir as default for Work Dir.
+  * Add button to open paths in explorer.
+  * Change the GUI font.
+  * Add editor exe path and editor launch options.
+  * If watching a map, compile on launch.
+  * Fix the weird and ugly output from the compiler tools caused by "\r" character.
 
 
 ## Changes - v0.4.1
