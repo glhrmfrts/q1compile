@@ -115,7 +115,7 @@ static bool Contains(std::string_view hay, std::string_view ned)
 static bool ShouldIgnoreFieldForDiff(std::string_view field)
 {
     return (
-        (field == "_tb_group")
+        (field == "_tb_group") || (field == "_tb_id")
     );
 }
 
@@ -160,7 +160,12 @@ std::string MapFile::GetBrushContent() const {
 std::string MapFile::GetEntityContent() const {
     std::string buf;
     for (const auto& ent : _entities) {
-        if (!Contains(ent.fields.at("classname"), "light")) {
+        auto classname_it = ent.fields.find("classname");
+        if (classname_it == ent.fields.end()) {
+            continue;
+        }
+
+        if (!Contains(classname_it->second, "light")) {
             for (const auto& field : ent.fields) {
                 if (!ShouldIgnoreFieldForDiff(field.first)) {
                     buf.append(field.first);
@@ -175,7 +180,12 @@ std::string MapFile::GetEntityContent() const {
 std::string MapFile::GetLightContent() const {
     std::string buf;
     for (const auto& ent : _entities) {
-        if (Contains(ent.fields.at("classname"), "light") && (ent.brush_content.size() == 0)) {
+        auto classname_it = ent.fields.find("classname");
+        if (classname_it == ent.fields.end()) {
+            continue;
+        }
+
+        if (Contains(classname_it->second, "light") && (ent.brush_content.size() == 0)) {
             for (const auto& field : ent.fields) {
                 if (!ShouldIgnoreFieldForDiff(field.first)) {
                     buf.append(field.first);
@@ -202,12 +212,12 @@ static std::string GetDiffFlagName(MapDiffFlags f)
 
 static MapDiffFlags GetFlagForDiffContent(std::string ca, std::string cb, MapDiffFlags flag)
 {
-    /*
+#if 0
     std::string fna = GetDiffFlagName(flag) + "_a.txt";
     std::string fnb = GetDiffFlagName(flag) + "_b.txt";
     WriteFileText(fna, ca);
     WriteFileText(fnb, cb);
-    */
+#endif
 
     if (ca != cb) {
         return flag;

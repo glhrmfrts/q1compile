@@ -12,6 +12,8 @@
 
 #define APP_VERSION "v0.5"
 
+#define WATCH_MAP_FILE_INTERVAL (1.0f)
+
 struct ScopeGuard
 {
     std::function<void()> func;

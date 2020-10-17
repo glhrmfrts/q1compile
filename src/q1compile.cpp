@@ -208,6 +208,8 @@ struct CompileJob
 
     void operator()()
     {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
         auto time_begin = std::chrono::system_clock::now();
 
         std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
@@ -218,6 +220,9 @@ struct CompileJob
         bool copy_lit = false;
         StrReplace(work_bsp, ".map", ".bsp");
         StrReplace(work_lit, ".map", ".lit");
+
+        auto prev_map_file = std::unique_ptr<MapFile>(g_app.map_file.release());
+        g_app.map_file = std::make_unique<MapFile>(source_map);
         
         g_app.map_has_leak = false;
         g_app.compiling = true;
@@ -269,15 +274,14 @@ struct CompileJob
         };
         ReportCompileParams("Starting to compile:");
 
-        auto map_file = std::make_unique<MapFile>(source_map);
-        if (!map_file->Good()) {
+        if (!g_app.map_file->Good()) {
             g_app.compile_output.append("Could not read map file!\n");
         }
         else {
-            if (g_app.map_file.get() && g_app.current_config.watch_map_file && g_app.current_config.auto_apply_onlyents && !this->ignore_diff) {
+            if (prev_map_file && g_app.current_config.watch_map_file && g_app.current_config.auto_apply_onlyents && !this->ignore_diff) {
                 g_app.compile_output.append("Doing map diff...\n");
 
-                ToolPreset diff_pre = GetMapDiffArgs(*g_app.map_file, *map_file);
+                ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *g_app.map_file);
                 config.tool_flags = diff_pre.flags;
                 config.qbsp_args.append(" " + diff_pre.qbsp_args);
                 config.light_args.append(" " + diff_pre.light_args);
@@ -286,7 +290,6 @@ struct CompileJob
                 g_app.compile_output.append("Diff QBSP args: " + diff_pre.qbsp_args + "\n");
                 g_app.compile_output.append("Diff LIGHT args: " + diff_pre.light_args + "\n");
             }
-            g_app.map_file = std::move(map_file);
         }
 
         if (Copy(source_map, work_map)) {
@@ -468,6 +471,13 @@ static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
 
 static void StartCompileJob(const Config& cfg, bool run_quake, bool ignore_diff = false)
 {
+    static std::chrono::system_clock::time_point last_compile_time;
+    auto compile_time = std::chrono::system_clock::now();
+    if (compile_time - last_compile_time < std::chrono::seconds(2)) {
+        return;
+    }
+    last_compile_time = compile_time;
+
     g_app.console_auto_scroll = true;
     g_app.console_lock_scroll = true;
     ClearConsole();
@@ -1847,7 +1857,7 @@ void qc_init(void* pdata)
     ClearConsole();
     SetErrorLogFile("q1compile_err.log");
 
-    g_app.map_file_watcher = std::make_unique<FileWatcher>("", 1.0f);
+    g_app.map_file_watcher = std::make_unique<FileWatcher>("", WATCH_MAP_FILE_INTERVAL);
     g_app.compile_queue = std::make_unique<WorkQueue>(std::size_t{ 1 }, std::size_t{ 128 });
     g_app.compile_status = "Doing nothing.";
 

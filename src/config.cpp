@@ -168,6 +168,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "watch_map_file") {
         p.ParseBool(config.watch_map_file);
     }
+    else if (name == "auto_apply_onlyents") {
+        p.ParseBool(config.auto_apply_onlyents);
+    }
     else if (name == "use_map_mod") {
         p.ParseBool(config.use_map_mod);
     }
@@ -282,6 +285,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "light_enabled", 0 != (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED));
     WriteVar(fh, "vis_enabled", 0 != (config.tool_flags & CONFIG_FLAG_VIS_ENABLED));
     WriteVar(fh, "watch_map_file", config.watch_map_file);
+    WriteVar(fh, "auto_apply_onlyents", config.auto_apply_onlyents);
     WriteVar(fh, "use_map_mod", config.use_map_mod);
     WriteVar(fh, "quake_output_enabled", config.quake_output_enabled);
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);

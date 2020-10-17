@@ -1,6 +1,6 @@
 #include "file_watcher.h"
 #include "path.h"
-
+#include "console.h"
 
 FileWatcher::FileWatcher(const std::string& path, float interval)
     : _path{ path }, _interval{ interval }, _enabled{ true }
