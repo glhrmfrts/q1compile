@@ -209,7 +209,7 @@ struct CompileJob
     void operator()()
     {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        
+
         auto time_begin = std::chrono::system_clock::now();
 
         std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
@@ -1878,7 +1878,7 @@ void qc_init(void* pdata)
         // If watching a map, compile on launch
         if (g_app.current_config.watch_map_file
             && !g_app.current_config.config_paths[PATH_MAP_SOURCE].empty()) {
-            StartCompileJob(g_app.current_config, false);
+            StartCompileJob(g_app.current_config, false, true);
         }
 
         // If enabled, open the editor on launch
