@@ -1,6 +1,9 @@
-# q1compile v0.5
+# q1compile v0.5.1
 
 A GUI to work with Quake map compiling tools.
+
+NOTE: if you already downloaded a previous version, unzip the newest version in the same directory to preserve user preferences.
+
 
 ## Configuration Files (.cfg)
 
@@ -8,12 +11,13 @@ Saves all your options, the paths you set and chosen tool preset.
 
 Path definitions:
 
-Tools Dir      - Where the compiler tools are (qbsp.exe, light.exe, vis.exe)
-Work Dir       - Temporary dir to work with files
-Output Dir     - Where the compiled .bsp and .lit files will be
+Tools Dir      - Where the compiler tools are (qbsp.exe, light.exe, vis.exe).
+Work Dir       - Temporary dir to work with files, it MUST NOT be the same as the map source directory.
+Output Dir     - Where the compiled .bsp and .lit files will be.
 Editor Exe     - The editor executable (optional).
-Engine Exe     - The Quake engine executable of your choice
-Map Source     - The .map file to compile
+Engine Exe     - The Quake engine executable of your choice.
+Map Source     - The .map file to compile.
+
 
 ## Tools Preset Files (.pre)
 
@@ -69,6 +73,8 @@ there is a 'Actions...' selection dialog where you can:
     * Clear working files  --                    Delete the map's .bsp and .lit files from the "Work Dir".
     * Clear output files   --                    Delete the map's .bsp and .lit files from the "Output Dir".
 
+    * Reset Work Dir       Ctrl + Shift + W      Resets the 'Work Dir' to it's default, which is the user's temp directory.
+
     * Manage presets       Ctrl + P              Opens a window for managing tool presets.
 
   * Help
@@ -80,7 +86,13 @@ there is a 'Actions...' selection dialog where you can:
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
 
 
-## Changes - v0.5
+## Changes - v0.5.1 - (25/10/2020)
+
+  * Better logging for better error diagnostics.
+  * (Bugfix) Don't compile if the 'Work Dir' is the same as the map source directory.
+
+
+## Changes - v0.5 - (17/10/2020)
 
   * Add "auto apply -onlyents" option, to perform a map diff and re-compile only the necessary steps (experimental feature).
   * Add "use map mod" option to launch the game using the mod indicated in the map file (TB only).
@@ -95,25 +107,25 @@ You can open issues and request features at https://github.com/glhrmfrts/q1compi
   * Fix the weird and ugly output from the compiler tools caused by "\r" character.
 
 
-## Changes - v0.4.1
+## Changes - v0.4.1 - (04/08/2020)
 
   * Link against DirectX 9 to support Windows 7.
 
 
-## Changes - v0.4
+## Changes - v0.4 - (01/08/2020)
 
   * Improved documentation.
   * Added ability to enable/disable quake engine output.
   * Changed location of user preferences to application directory.
 
 
-## Changes - v0.3.1
+## Changes - v0.3.1 - (03/07/2020)
 
   * Added application icon.
   * Using standard Windows file dialogs.
 
 
-## Changes - v0.3
+## Changes - v0.3 - (26/05/2020)
 
   * UI change.
   * Better logging during compiling.
@@ -121,12 +133,12 @@ You can open issues and request features at https://github.com/glhrmfrts/q1compi
   * Bugfix: Check if .lit file was produced by light.exe instead of assuming it always does.
 
 
-## Changes - v0.2.1
+## Changes - v0.2.1 - (26/05/2020)
 
   * Bugfix: Reset file browser flags when selecting Engine and Map Source paths.
 
 
-## Changes - v0.2
+## Changes - v0.2 - (25/05/2020)
 
   * If the map source file changes while compiling, stop the compilation and start again.
   * Display recent configs in the menu bar.
@@ -134,16 +146,23 @@ You can open issues and request features at https://github.com/glhrmfrts/q1compi
   * Requests confirmation if trying to create a new config while the current one is modified.
 
 
-## Changes - v0.1.1
+## Changes - v0.1.1 - (20/05/2020)
 
   * Bugfix: Remove .bsp extension in +map argument for engines.
   * Bugfix: Add .cfg extension when saving configs if no extension was provived.
 
 
-### License
+### Credits
 
-MIT
+Dear ImGui - Omar Cornut - https://github.com/ocornut/imgui
 
-### Authors
+ImGui Markdown - Juliette Foucaut & Doug Binks - https://github.com/juliettef/imgui_markdown
+
+Droid Sans Mono font - Google Android
 
 Guilherme Nemeth - guilherme.nemeth@gmail.com - @nemethg on Quake Mapping discord server
+
+
+### License
+
+q1compile is licensed under the MIT License, see LICENSE file for more information.

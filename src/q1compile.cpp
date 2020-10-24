@@ -136,7 +136,7 @@ static std::vector<const char*> g_config_paths_filter = {
 
 static std::vector<const char*> g_config_paths_help = {
     "Where the compiler tools are (qbsp.exe, light.exe, vis.exe)",
-    "Temporary dir to work with files",
+    "Temporary dir to work with files, it MUST NOT be the same as the map source directory",
     "Where the compiled .bsp and .lit files will be",
     "The map editor executable (optional)",
     "The Quake engine executable",
@@ -208,12 +208,22 @@ struct CompileJob
 
     void operator()()
     {
+        g_app.compile_status = "Preparing to compile...";
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
         auto time_begin = std::chrono::system_clock::now();
 
         std::string source_map = PathFromNative(config.config_paths[PATH_MAP_SOURCE]);
         std::string work_map = PathJoin(PathFromNative(config.config_paths[PATH_WORK_DIR]), PathFilename(source_map));
+        if (source_map == work_map) {
+            g_app.compile_status = "Stopped.";
+            PrintError("ERROR: 'Work Dir' is the same as the map source directory, there's a risk of messing with your files, compilation will not proceed!\n");
+            Print("Please set the 'Work Dir' to somewhere different.\n");
+            Print("If you don't care about this setting, use the menu 'Compile -> Reset Work Dir' or press 'Ctrl + Shift + W'.\n");
+            return;
+        }
+
         std::string work_bsp = work_map;
         std::string work_lit = work_map;
         bool copy_bsp = false;
@@ -460,7 +470,10 @@ static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd
     if (suppress_output) {
         output = nullptr;
     }
+
+    SetPrintToFile(false);
     ReadToMutexCharBuffer(proc, &g_app.stop_compiling, output);
+    SetPrintToFile(true);
 }
 
 static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
@@ -506,6 +519,11 @@ static bool IsExtension(const std::string& path, const std::string& extension)
     return ext == extension;
 }
 
+static void ReportConfigChange(const std::string& name, const std::string& value)
+{
+    Print("Set '"); Print(name.c_str()); Print("' to "); Print(value.c_str()); Print("\n");
+}
+
 static void HandleMapSourceChanged()
 {
     const std::string& path = g_app.current_config.config_paths[PATH_MAP_SOURCE];
@@ -520,6 +538,7 @@ static void SetConfigPath(ConfigPath path, const std::string& value)
 {
     g_app.modified = true;
     g_app.current_config.config_paths[path] = value;
+    ReportConfigChange(g_config_path_names[path], value);
     if (path == PATH_MAP_SOURCE) {
         HandleMapSourceChanged();
     }
@@ -634,6 +653,12 @@ static void CopyPreset(const ToolPreset& preset)
     g_app.current_config.light_args = preset.light_args;
     g_app.current_config.vis_args = preset.vis_args;
     g_app.current_config.tool_flags = preset.flags;
+    ReportConfigChange("QBSP", (preset.flags & CONFIG_FLAG_QBSP_ENABLED) ? "enabled" : "disabled");
+    ReportConfigChange("LIGHT", (preset.flags & CONFIG_FLAG_LIGHT_ENABLED)  ? "enabled" : "disabled");
+    ReportConfigChange("VIS", (preset.flags & CONFIG_FLAG_VIS_ENABLED)  ? "enabled" : "disabled");
+    ReportConfigChange("QBSP args", (preset.qbsp_args));
+    ReportConfigChange("LIGHT args", (preset.light_args));
+    ReportConfigChange("VIS args", (preset.vis_args));
 }
 
 static ToolPreset& GetPreset(int i)
@@ -756,6 +781,18 @@ void ShowUnsavedChangesWindow(UnsavedChangesCallback cb)
     g_app.unsaved_changes_callback = cb;
 }
 
+static std::string GetDefaultWorkDir()
+{
+    std::string work_dir = PathJoin(qc_GetTempDir(), "q1compile");
+    if (!PathExists(work_dir)) {
+        if (!CreatePath(work_dir)) {
+            PrintError("Could not create work dir!\n");
+            work_dir = "";
+        }
+    }
+    return work_dir;
+}
+
 /*
 ===================
 UI Event Handlers
@@ -771,16 +808,10 @@ static void HandleNewConfig()
         });
     }
     else {
-        std::string work_dir = PathJoin(qc_GetTempDir(), "q1compile");
-        if (!PathExists(work_dir)) {
-            if (!CreatePath(work_dir)) {
-                PrintError("Could not create work dir!\n");
-            }
-        }
         g_app.map_file = nullptr;
         g_app.map_has_leak = false;
         g_app.current_config = {};
-        g_app.current_config.config_paths[PATH_WORK_DIR] = work_dir;
+        g_app.current_config.config_paths[PATH_WORK_DIR] = GetDefaultWorkDir();
         g_app.user_config.loaded_config = "";
         WriteUserConfig(g_app.user_config);
     }
@@ -1110,6 +1141,15 @@ static void HandleClearOutputFiles()
     }
 }
 
+static void HandleResetWorkDir()
+{
+    std::string value = GetDefaultWorkDir();
+    if (!value.empty()) {
+        g_app.current_config.config_paths[PATH_WORK_DIR] = value;
+        ReportConfigChange("Work Dir:", value);
+    }
+}
+
 static std::string GetReadmeText()
 {
     static std::string readme;
@@ -1254,6 +1294,12 @@ static void DrawMenuBar()
 
             ImGui::Separator();
 
+            if (ImGui::MenuItem("Reset Work Dir", "Ctrl+Shift+W", nullptr)) {
+                HandleResetWorkDir();
+            }
+
+            ImGui::Separator();
+
             if (ImGui::MenuItem("Manage presets...", "Ctrl+P", nullptr)) {
                 g_app.show_preset_window = true;
             }
@@ -1284,7 +1330,7 @@ static void DrawSeparator(float margin)
     DrawSpacing(0, margin);
 }
 
-static bool DrawTextInput(const char* label, std::string& str, float spacing, ImGuiInputTextFlags flags = 0, const char* help = nullptr)
+static bool DrawTextInput(const char* label, std::string& str, float spacing, ImGuiInputTextFlags flags = 0, const char* help = nullptr, bool report_change = true)
 {
     ImGui::Text(label);
     ImGui::SameLine();
@@ -1302,6 +1348,10 @@ static bool DrawTextInput(const char* label, std::string& str, float spacing, Im
     ImGui::PushID(label);
     bool changed = ImGui::InputTextWithHint("", label, &str, flags);
     ImGui::PopID();
+
+    if (changed && report_change) {
+        ReportConfigChange(label, str);
+    }
 
     if (flags & ImGuiInputTextFlags_ReadOnly) {
         ImGui::PopStyleColor(1);
@@ -1384,6 +1434,8 @@ static bool DrawToolParams(const char* label, int tool_flag, std::string& args, 
         if (ImGui::Checkbox(label, &checked)) {
             changed = true;
 
+            ReportConfigChange(label, checked ? "enabled" : "disabled");
+
             if (checked) {
                 g_app.current_config.tool_flags |= tool_flag;
             }
@@ -1403,6 +1455,7 @@ static bool DrawToolParams(const char* label, int tool_flag, std::string& args, 
 
     if (ImGui::InputTextWithHint("", "command-line arguments", &args)) {
         changed = true;
+        ReportConfigChange(std::string(label) + " args", args);
     }
 
     if (tool_flag) {
@@ -1540,7 +1593,7 @@ static void DrawPresetWindow()
 
                         ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
 
-                        DrawTextInput("Name: ", preset.name, 24, flags);
+                        DrawTextInput("Name: ", preset.name, 24, flags, nullptr, false);
 
                         DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 13, flags);
                         DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 5, flags);
@@ -1840,7 +1893,6 @@ static void DrawMainWindow()
     ImGui::End();
 
     ImGui::PopStyleVar(1);
-    
 }
 
 /*
@@ -1953,6 +2005,11 @@ void qc_key_down(unsigned int key)
     case 'P':
         if (io.KeyCtrl) {
             g_app.show_preset_window = true;
+        }
+        break;
+    case 'W':
+        if (io.KeyCtrl && io.KeyShift) {
+            HandleResetWorkDir();
         }
         break;
     case 'Q':

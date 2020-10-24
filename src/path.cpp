@@ -335,3 +335,18 @@ unsigned long long GetFileModifiedTime(const std::string& path)
 {
     return NativeGetFileModifiedTime(path.c_str());
 }
+
+std::size_t PathGetFileSize(const std::string& path)
+{
+    std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
+    if (!fh) {
+        PrintError("PathGetFileSize: can't open ");
+        PrintError(path.c_str());
+        PrintError("\n");
+        return 0;
+    }
+    ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+
+    std::size_t sz = GetFileSize(fh);
+    return sz;
+}

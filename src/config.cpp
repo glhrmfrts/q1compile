@@ -7,15 +7,6 @@
 #include "common.h"
 #include "path.h"
 
-static const char* g_config_path_names[] = {
-    "tools_dir",
-    "work_dir",
-    "out_dir",
-    "editor_exe",
-    "engine_exe",
-    "mapsrc_file"
-};
-
 struct ConfigLineParser
 {
     explicit ConfigLineParser(std::string l) : _line{ l }, _size{ l.size() } {}

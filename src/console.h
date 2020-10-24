@@ -19,6 +19,8 @@ void ClearConsole();
 
 void SetErrorLogFile(const std::string& path);
 
+void SetPrintToFile(bool b);
+
 void Print(char c);
 
 void Print(const char* cstr);

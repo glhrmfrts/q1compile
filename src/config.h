@@ -63,6 +63,15 @@ struct UserConfig
     std::vector<ToolPreset>     tool_presets;
 };
 
+static const char* g_config_path_names[] = {
+    "tools_dir",
+    "work_dir",
+    "out_dir",
+    "editor_exe",
+    "engine_exe",
+    "mapsrc_file"
+};
+
 void WriteConfig(const Config& config, const std::string& path);
 
 Config ReadConfig(const std::string& path);

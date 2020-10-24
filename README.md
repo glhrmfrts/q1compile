@@ -26,6 +26,16 @@ Feel free to open an issue if you have a problem or feature request!
 
 If you're a programmer also feel free to fork and open pull requests.
 
+### Credits
+
+Dear ImGui - Omar Cornut - https://github.com/ocornut/imgui
+
+ImGui Markdown - Juliette Foucaut & Doug Binks - https://github.com/juliettef/imgui_markdown
+
+Droid Sans Mono font - Google Android
+
+Guilherme Nemeth - guilherme.nemeth@gmail.com - @nemethg on Quake Mapping discord server
+
 ### License
 
-MIT
+q1compile is licensed under the MIT License, see LICENSE file for more information.

@@ -2,12 +2,15 @@
 #include <fstream>
 #include <chrono>
 #include <ctime>
+#include <atomic>
 #include "console.h"
+#include "path.h"
 
 static struct ConsoleState {
     std::vector<LogEntry> entries;
     std::unique_ptr<std::ofstream> error_log_file;
     std::size_t cr_count = 0;
+    std::atomic_bool print_to_file;
 } g_console;
 
 static void AddNewEntry(LogLevel level)
@@ -20,6 +23,13 @@ static void Append(char c)
     g_console.entries.back().text.append(&c, 1);
 }
 
+static void AppendToFile(char c)
+{
+    if (g_console.error_log_file.get() && g_console.print_to_file) {
+        (*g_console.error_log_file) << c;
+    }
+}
+
 static LogLevel CurrentLevel()
 {
     return g_console.entries.back().level;
@@ -27,9 +37,7 @@ static LogLevel CurrentLevel()
 
 static void PrintLevel(LogLevel level, char c)
 {
-    if (level == LOG_ERROR && g_console.error_log_file.get()) {
-        (*g_console.error_log_file) << c;
-    }
+    AppendToFile(c);
 
     if (c == '\n') {
         if (g_console.error_log_file.get()) g_console.error_log_file->flush();
@@ -49,7 +57,8 @@ static void PrintLevel(LogLevel level, char c)
             g_console.entries.back().text = "";
             g_console.cr_count = 0;
         }
-        Append(c);
+
+        Append(c);    
     }
 }
 
@@ -64,12 +73,31 @@ static void PrintLevel(LogLevel level, const char* cstr)
 
 void SetErrorLogFile(const std::string& path)
 {
-    g_console.error_log_file = std::make_unique<std::ofstream>(path);
+    bool append = true;
+    if (PathGetFileSize(path) > (10*1024*1024)) {
+        append = false;
+    }
+
+    g_console.error_log_file = std::make_unique<std::ofstream>();
+    if (append) {
+        g_console.error_log_file->open(path, std::ios_base::app);
+    }
+    else {
+        g_console.error_log_file->open(path);
+    }
+
+    SetPrintToFile(true);
 
     auto now_clock = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now_clock);
+    (*g_console.error_log_file) << "============================================================" << std::endl;
     (*g_console.error_log_file) << "q1compile log start: " << std::ctime(&now_time) << std::endl;
     g_console.error_log_file->flush();
+}
+
+void SetPrintToFile(bool b)
+{
+    g_console.print_to_file = b;
 }
 
 void ClearConsole()
