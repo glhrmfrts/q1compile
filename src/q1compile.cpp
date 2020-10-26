@@ -641,7 +641,7 @@ static bool LoadConfig(const std::string& path)
 
 static void CopyPreset(const ToolPreset& preset)
 {
-    g_app.modified = ComparePresetToConfig(preset);
+    g_app.modified = g_app.modified || ComparePresetToConfig(preset);
     g_app.current_config.qbsp_args = preset.qbsp_args;
     g_app.current_config.light_args = preset.light_args;
     g_app.current_config.vis_args = preset.vis_args;
