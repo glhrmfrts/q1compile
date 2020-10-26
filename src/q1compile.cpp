@@ -484,13 +484,6 @@ static void ExecuteShellCommand(const std::string& cmd, const std::string& pwd)
 
 static void StartCompileJob(const Config& cfg, bool run_quake, bool ignore_diff = false)
 {
-    static std::chrono::system_clock::time_point last_compile_time;
-    auto compile_time = std::chrono::system_clock::now();
-    if (compile_time - last_compile_time < std::chrono::seconds(2)) {
-        return;
-    }
-    last_compile_time = compile_time;
-
     g_app.console_auto_scroll = true;
     g_app.console_lock_scroll = true;
     ClearConsole();
