@@ -881,12 +881,20 @@ static void HandleSaveConfig()
 
 static void HandleCompileAndRun()
 {
-    StartCompileJob(g_app.current_config, true);
+    // run quake and ignore diff
+    StartCompileJob(g_app.current_config, true, true);
 }
 
 static void HandleCompileOnly()
 {
-    StartCompileJob(g_app.current_config, false);
+    // don't run quake and ignore diff
+    StartCompileJob(g_app.current_config, false, true);
+}
+
+static void HandleAutoCompile()
+{
+    // don't run quake and don't ignore diff
+    StartCompileJob(g_app.current_config, false, false);
 }
 
 static void HandleStopCompiling()
@@ -2030,7 +2038,7 @@ bool qc_render()
 {
     float dt = ImGui::GetIO().DeltaTime;
     if (g_app.map_file_watcher->Update(dt)) {
-        HandleCompileOnly();
+        HandleAutoCompile();
     }
 
     while (!g_app.compile_output.empty()) {
