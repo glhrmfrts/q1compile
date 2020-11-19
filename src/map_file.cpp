@@ -119,6 +119,51 @@ static bool ShouldIgnoreFieldForDiff(std::string_view field)
     );
 }
 
+static bool IsWorldspawnLightField(std::string_view field)
+{
+    static const char* light_fields[] = {
+        // Ambient Occlusion options
+        "_dirt", "_dirtmode", "_dirtscale", "_dirtgain", "_dirtdepth", "_dirtangle",
+
+        // Bounce lighting options
+        "_bounce", "_bouncescale", "_bouncecolorscale", "_bouncestyled",
+
+        // Sun options
+        "_sunlight", "_sunlight_color", "_sunlight_mangle", "_anglescale", "_sunlight_dirt", "_sunlight_penumbra",
+        "_sunlight2", "_sunlight2_color", "_sunlight2_dirt",
+        "_sunlight3", "_sunlight3_color",
+
+        // World lighting options
+        "_minlight", "_minlight_color", "_minlight_dirt", "_range", "_dist", "_gamma", "_spotlightautofalloff"
+    };
+
+    const size_t count = sizeof(light_fields) / sizeof(const char*);
+    for (size_t i = 0; i < count; i++) {
+        if (field == light_fields[i]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool IsBrushEntityLightField(std::string_view field)
+{
+    static const char* light_fields[] = {
+        "_minlight", "_minlight_color", "_lightignore", "_minlight_exclude",
+        "_shadow", "_shadowself", "_shadowworldonly", "_phong", "_phong_angle", "_phong_angle_concave", "_dirt"
+    };
+
+    const size_t count = sizeof(light_fields) / sizeof(const char*);
+    for (size_t i = 0; i < count; i++) {
+        if (field == light_fields[i]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 MapFile::MapFile(const std::string& path)
 {
     ReadFileText(path, _text);
@@ -186,8 +231,29 @@ std::string MapFile::GetLightContent() const {
         }
 
         if (Contains(classname_it->second, "light") && (ent.brush_content.size() == 0)) {
+            // Check light entity fields
             for (const auto& field : ent.fields) {
                 if (!ShouldIgnoreFieldForDiff(field.first)) {
+                    buf.append(field.first);
+                    buf.append(field.second);
+                }
+            }
+        }
+
+        if (ent.brush_content.size() > 0) {
+            // Check light-related fields for brush entities
+            for (const auto& field : ent.fields) {
+                if (IsBrushEntityLightField(field.first)) {
+                    buf.append(field.first);
+                    buf.append(field.second);
+                }
+            }
+        }
+
+        if (classname_it->second == "worldspawn") {
+            // Check light-related fields for the worldspawn entity
+            for (const auto& field : ent.fields) {
+                if (IsWorldspawnLightField(field.first)) {
                     buf.append(field.first);
                     buf.append(field.second);
                 }

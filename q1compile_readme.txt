@@ -86,8 +86,9 @@ there is a 'Actions...' selection dialog where you can:
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
 
 
-## Changes - v0.6 - (18/11/2020)
+## Changes - v0.6 - (20/11/2020)
 
+  * Check worldspawn and brush entities' light related fields when doing map diff.
   * Remember whether sections of the UI were open or not.
   * Add option to compile the map on launch, instead of using the 'watch map file' option.
   * Add option to save current tools options as new preset.
