@@ -1,4 +1,4 @@
-# q1compile v0.5.1
+# q1compile v0.6
 
 A GUI to work with Quake map compiling tools.
 
@@ -86,8 +86,10 @@ there is a 'Actions...' selection dialog where you can:
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
 
 
-## Changes - v0.5.1 - (25/10/2020)
+## Changes - v0.6 - (18/11/2020)
 
+  * Add option to compile the map on launch, instead of using the 'watch map file' option.
+  * Add option to save current tools options as new preset.
   * Better logging for better error diagnostics.
   * (Bugfix) Don't compile if the 'Work Dir' is the same as the map source directory.
 

@@ -1882,6 +1882,12 @@ static void DrawMainContent()
         ImGui::SameLine();
         DrawHelpMarker("Option to display the output from the Quake engine while it's running.");
 
+        if (ImGui::Checkbox("Compile map on launch", &g_app.current_config.compile_map_on_launch)) {
+            g_app.modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker("Compile the map as soon as q1compile launches.");
+
         if (ImGui::Checkbox("Open editor on launch", &g_app.current_config.open_editor_on_launch)) {
             g_app.modified = true;
         }
@@ -1971,7 +1977,7 @@ void qc_init(void* pdata)
         }
 
         // If watching a map, compile on launch
-        if (g_app.current_config.watch_map_file
+        if (g_app.current_config.compile_map_on_launch
             && !g_app.current_config.config_paths[PATH_MAP_SOURCE].empty()) {
             StartCompileJob(g_app.current_config, false, true);
         }

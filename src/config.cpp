@@ -168,6 +168,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "quake_output_enabled") {
         p.ParseBool(config.quake_output_enabled);
     }
+    else if (name == "compile_map_on_launch") {
+        p.ParseBool(config.compile_map_on_launch);
+    }
     else if (name == "open_editor_on_launch") {
         p.ParseBool(config.open_editor_on_launch);
     }
@@ -279,6 +282,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "auto_apply_onlyents", config.auto_apply_onlyents);
     WriteVar(fh, "use_map_mod", config.use_map_mod);
     WriteVar(fh, "quake_output_enabled", config.quake_output_enabled);
+    WriteVar(fh, "compile_map_on_launch", config.compile_map_on_launch);
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
     WriteVar(fh, "selected_preset", config.selected_preset);
 }

@@ -36,6 +36,7 @@ struct Config
     bool use_map_mod;
     bool auto_apply_onlyents;
     bool quake_output_enabled;
+    bool compile_map_on_launch;
     bool open_editor_on_launch;
     int tool_flags;
 
