@@ -62,6 +62,10 @@ struct UserConfig
     std::string                 last_export_preset_location;
     std::deque<std::string>     recent_configs;
     std::vector<ToolPreset>     tool_presets;
+    bool                        ui_section_info_open;
+    bool                        ui_section_paths_open;
+    bool                        ui_section_tools_open;
+    bool                        ui_section_other_open;
 };
 
 static const char* g_config_path_names[] = {

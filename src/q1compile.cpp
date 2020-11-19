@@ -1784,8 +1784,10 @@ static void DrawHelpWindow()
 
 static void DrawMainContent()
 {
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    ImGui::SetNextItemOpen(g_app.user_config.ui_section_info_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Info")) {
+        g_app.user_config.ui_section_info_open = true;
+
         DrawSpacing(0, 5);
 
         float offs = 9.0f;
@@ -1794,11 +1796,16 @@ static void DrawMainContent()
 
         ImGui::TreePop();
     }
+    else {
+        g_app.user_config.ui_section_info_open = false;
+    }
 
     DrawSeparator(5);
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    ImGui::SetNextItemOpen(g_app.user_config.ui_section_paths_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Paths")) {
+        g_app.user_config.ui_section_paths_open = true;
+
         DrawSpacing(0, 5);
 
         float offs = -15.0f;
@@ -1811,11 +1818,16 @@ static void DrawMainContent()
 
         ImGui::TreePop();
     }
+    else {
+        g_app.user_config.ui_section_paths_open = false;
+    }
 
     DrawSeparator(5);
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    ImGui::SetNextItemOpen(g_app.user_config.ui_section_tools_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Tools options")) {
+        g_app.user_config.ui_section_tools_open = true;
+
         DrawSpacing(0, 5);
 
         DrawPresetCombo();
@@ -1838,11 +1850,16 @@ static void DrawMainContent()
         }
         ImGui::TreePop();
     }
+    else {
+        g_app.user_config.ui_section_tools_open = false;
+    }
 
     DrawSeparator(5);
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    ImGui::SetNextItemOpen(g_app.user_config.ui_section_other_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Other options")) {
+        g_app.user_config.ui_section_other_open = true;
+
         DrawSpacing(0, 5);
         if (ImGui::Checkbox("Watch map file for changes and pre-compile", &g_app.current_config.watch_map_file)) {
             g_app.modified = true;
@@ -1895,6 +1912,9 @@ static void DrawMainContent()
         DrawHelpMarker("Open the map in the editor as soon as q1compile launches.");
 
         ImGui::TreePop();
+    }
+    else {
+        g_app.user_config.ui_section_other_open = false;
     }
 
     DrawSeparator(5);

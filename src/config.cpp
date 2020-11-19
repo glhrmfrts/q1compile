@@ -203,6 +203,18 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
     else if (name == "last_export_preset_location") {
         p.ParseString(config.last_export_preset_location);
     }
+    else if (name == "ui_section_info_open") {
+        p.ParseBool(config.ui_section_info_open);
+    }
+    else if (name == "ui_section_paths_open") {
+        p.ParseBool(config.ui_section_paths_open);
+    }
+    else if (name == "ui_section_tools_open") {
+        p.ParseBool(config.ui_section_tools_open);
+    }
+    else if (name == "ui_section_other_open") {
+        p.ParseBool(config.ui_section_other_open);
+    }
     else if (name == "recent_config") {
         std::string value;
         if (p.ParseString(value))
@@ -311,6 +323,10 @@ void WriteUserConfig(const UserConfig& config)
     WriteVar(fh, "loaded_config", config.loaded_config);
     WriteVar(fh, "last_import_preset_location", config.last_import_preset_location);
     WriteVar(fh, "last_export_preset_location", config.last_export_preset_location);
+    WriteVar(fh, "ui_section_info_open", config.ui_section_info_open);
+    WriteVar(fh, "ui_section_paths_open", config.ui_section_paths_open);
+    WriteVar(fh, "ui_section_tools_open", config.ui_section_tools_open);
+    WriteVar(fh, "ui_section_other_open", config.ui_section_other_open);
 
     for (const auto& rc : config.recent_configs) {
         WriteVar(fh, "recent_config", rc);
@@ -334,6 +350,13 @@ UserConfig ReadUserConfig()
         return {};
 
     UserConfig config = {};
+
+    // set defaults
+    config.ui_section_info_open = true;
+    config.ui_section_paths_open = true;
+    config.ui_section_tools_open = true;
+    config.ui_section_other_open = true;
+
     ParseConfigFile(path, [&config](std::string name, ConfigLineParser& p) {
         SetUserConfigVar(config, name, p);
     });

@@ -88,6 +88,7 @@ You can open issues and request features at https://github.com/glhrmfrts/q1compi
 
 ## Changes - v0.6 - (18/11/2020)
 
+  * Remember whether sections of the UI were open or not.
   * Add option to compile the map on launch, instead of using the 'watch map file' option.
   * Add option to save current tools options as new preset.
   * Better logging for better error diagnostics.
