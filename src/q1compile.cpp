@@ -70,6 +70,7 @@ struct AppState {
     bool show_preset_window = false;
     bool show_unsaved_changes_window = false;
     bool show_help_window = false;
+    bool save_current_tools_options_as_preset = false;
     int preset_to_export = 0;
 
     int window_width = WINDOW_WIDTH;
@@ -1418,6 +1419,13 @@ static void DrawPresetCombo()
 
         DrawSeparator(2);
 
+        if (ImGui::Selectable("Save current options as new preset", false)) {
+            g_app.show_preset_window = true;
+            g_app.save_current_tools_options_as_preset = true;
+        }
+
+        DrawSeparator(2);
+
         if (ImGui::Selectable("Manage presets...", false)) {
             g_app.show_preset_window = true;
         }
@@ -1545,6 +1553,49 @@ static void DrawConsoleView()
     ImGui::EndChild();
 }
 
+// tool preset actions
+static constexpr int TOOL_PRESET_DUPLICATE = 1;
+static constexpr int TOOL_PRESET_REMOVE = 2;
+
+static int DrawPresetListItem(ToolPreset& preset, int index)
+{
+    int result = 0;
+    if (ImGui::TreeNode("", preset.name.c_str())) {
+        DrawSpacing(0, 5);
+
+        ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
+
+        DrawTextInput("Name: ", preset.name, 24, flags, nullptr, false);
+
+        DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 13, flags);
+        DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 5, flags);
+        DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 20, flags);
+        //DrawPresetToolParams(preset, "QUAKE", 0, preset.quake_args, 8);
+
+        ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10, 0); ImGui::SameLine();
+        if (ImGui::BeginCombo("##actions", "Actions...")) {
+            if (ImGui::Selectable("Copy")) {
+                result = TOOL_PRESET_DUPLICATE;
+            }
+            if (ImGui::Selectable("Select")) {
+                HandleSelectPreset(index + 1);
+            }
+            if (ImGui::Selectable("Export")) {
+                HandleExportPreset(index);
+            }
+            if (!preset.builtin) {
+                if (ImGui::Selectable("Remove")) {
+                    result = TOOL_PRESET_REMOVE;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TreePop();
+    }
+    return result;
+}
+
 static void DrawPresetWindow()
 {
     static bool prev_show;
@@ -1563,6 +1614,21 @@ static void DrawPresetWindow()
             int remove_index = -1;
             int dup_index = -1;
 
+            // Check conditions to add new preset.
+            if (g_app.save_current_tools_options_as_preset) {
+                newly_added_index = g_app.user_config.tool_presets.size();
+
+                ToolPreset preset = {};
+                preset.name = "New Preset";
+                preset.flags = g_app.current_config.tool_flags;
+                preset.qbsp_args = g_app.current_config.qbsp_args;
+                preset.light_args = g_app.current_config.light_args;
+                preset.vis_args = g_app.current_config.vis_args;
+                g_app.user_config.tool_presets.push_back(preset);
+
+                g_app.save_current_tools_options_as_preset = false;
+            }
+
             if (ImGui::Button("Add Preset")) {
                 newly_added_index = g_app.user_config.tool_presets.size();
 
@@ -1570,6 +1636,7 @@ static void DrawPresetWindow()
                 preset.name = "New Preset";
                 g_app.user_config.tool_presets.push_back(preset);
             }
+
             ImGui::SameLine();
             if (ImGui::Button("Import Preset")) {
                 HandleImportPreset();
@@ -1589,39 +1656,14 @@ static void DrawPresetWindow()
                         newly_added_index = -1;
                     }
 
-                    if (ImGui::TreeNode("", preset.name.c_str())) {
-                        DrawSpacing(0, 5);
-
-                        ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
-
-                        DrawTextInput("Name: ", preset.name, 24, flags, nullptr, false);
-
-                        DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 13, flags);
-                        DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 5, flags);
-                        DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 20, flags);
-                        //DrawPresetToolParams(preset, "QUAKE", 0, preset.quake_args, 8);
-
-                        ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10, 0); ImGui::SameLine();
-                        if (ImGui::BeginCombo("##actions", "Actions...")) {
-                            if (ImGui::Selectable("Copy")) {
-                                dup_index = i;
-                            }
-                            if (ImGui::Selectable("Select")) {
-                                HandleSelectPreset(i + 1);
-                            }
-                            if (ImGui::Selectable("Export")) {
-                                HandleExportPreset(i);
-                            }
-                            if (!preset.builtin) {
-                                if (ImGui::Selectable("Remove")) {
-                                    remove_index = i;
-                                }
-                            }
-                            ImGui::EndCombo();
-                        }
-
-                        ImGui::TreePop();
+                    int action = DrawPresetListItem(preset, i);
+                    if (action == TOOL_PRESET_DUPLICATE) {
+                        dup_index = i;
                     }
+                    else if (action == TOOL_PRESET_REMOVE) {
+                        remove_index = i;
+                    }
+
                     ImGui::PopID();
 
                     DrawSeparator(5);
