@@ -34,6 +34,7 @@ struct CompileStep
     std::string cmd;
     std::string args;
     bool enabled = false;
+    int flags = 0;
 };
 
 /// Config can be saved and loaded from the path the user chooses
