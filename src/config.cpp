@@ -146,6 +146,15 @@ static CompileStepType ParseCompileStepType(const std::string& tstr)
     return COMPILE_INVALID;
 }
 
+static std::vector<CompileStep> GetOldCompileSteps()
+{
+    std::vector<CompileStep> steps;
+    steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
+    steps.push_back({ COMPILE_LIGHT, "light", "", false });
+    steps.push_back({ COMPILE_VIS, "vis", "", false });
+    return steps;
+}
+
 static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector<CompileStep>& steps)
 {
     if (name == "compile_step") {
@@ -173,6 +182,28 @@ static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector
     }
     else if (name == "compile_step_enabled") {
         p.ParseBool(steps.back().enabled);
+    }
+}
+
+static void SetConfigVarOld(Config& config, std::string name, ConfigLineParser& p)
+{
+    if (name == "qbsp_args") {
+        p.ParseString(config.steps[0].args);
+    }
+    else if (name == "light_args") {
+        p.ParseString(config.steps[1].args);
+    }
+    else if (name == "vis_args") {
+        p.ParseString(config.steps[2].args);
+    }
+    else if (name == "qbsp_enabled") {
+        p.ParseBool(config.steps[0].enabled);
+    }
+    else if (name == "light_enabled") {
+        p.ParseBool(config.steps[1].enabled);
+    }
+    else if (name == "vis_enabled") {
+        p.ParseBool(config.steps[2].enabled);
     }
 }
 
@@ -214,6 +245,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     }
     else if (config.version.empty()) {
         // old version (< v0.7)
+        if (config.steps.empty()) {
+            config.steps = GetOldCompileSteps();
+        }
         SetConfigVarOld(config, name, p);
     }
     else {
@@ -229,6 +263,37 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
             p.ParseString( config.config_paths[idx] );
         }
     }
+}
+
+static void SetToolPresetVarOld(const std::string& name, ConfigLineParser& p, ToolPreset& preset)
+{
+    if (name == "tool_preset_qbsp_args") {
+        p.ParseString(preset.steps[0].args);
+    }
+    else if (name == "tool_preset_light_args") {
+        p.ParseString(preset.steps[1].args);
+    }
+    else if (name == "tool_preset_vis_args") {
+        p.ParseString(preset.steps[2].args);
+    }
+    else if (name == "tool_preset_qbsp_enabled") {
+        p.ParseBool(preset.steps[0].enabled);
+    }
+    else if (name == "tool_preset_light_enabled") {
+        p.ParseBool(preset.steps[1].enabled);
+    }
+    else if (name == "tool_preset_vis_enabled") {
+        p.ParseBool(preset.steps[2].enabled);
+    }
+}
+
+static void SetUserConfigVarOld(UserConfig& config, std::string name, ConfigLineParser& p)
+{
+    auto& preset = config.tool_presets.back();
+    if (preset.steps.empty()) {
+        preset.steps = GetOldCompileSteps();
+    }
+    SetToolPresetVarOld(name, p, preset);
 }
 
 static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLineParser& p)
@@ -271,7 +336,7 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
         auto& preset = config.tool_presets.back();
         SetCompileStepVar(name, p, preset.steps);
     }
-    else if (config.version.empty()) {
+    else if (name.find("tool_preset_") != std::string::npos && config.version.empty()) {
         // old version (< v0.7)
         SetUserConfigVarOld(config, name, p);
     }
@@ -409,28 +474,6 @@ void WriteToolPreset(const ToolPreset& preset, const std::string& path)
     WriteToolPreset(fh, preset);
 }
 
-static void SetToolPresetVarOld(const std::string& name, ConfigLineParser& p, ToolPreset& preset)
-{
-    if (name == "tool_preset_qbsp_args") {
-        p.ParseString(preset.steps[0].args);
-    }
-    else if (name == "tool_preset_light_args") {
-        p.ParseString(preset.steps[1].args);
-    }
-    else if (name == "tool_preset_vis_args") {
-        p.ParseString(preset.steps[2].args);
-    }
-    else if (name == "tool_preset_qbsp_enabled") {
-        p.ParseBool(preset.steps[0].enabled);
-    }
-    else if (name == "tool_preset_light_enabled") {
-        p.ParseBool(preset.steps[1].enabled);
-    }
-    else if (name == "tool_preset_vis_enabled") {
-        p.ParseBool(preset.steps[2].enabled);
-    }
-}
-
 ToolPreset ReadToolPreset(const std::string& path)
 {
     if (!PathExists(path))
@@ -451,9 +494,7 @@ ToolPreset ReadToolPreset(const std::string& path)
         else if (preset.version.empty()) {
             // if it's old version (< v0.7)
             if (preset.steps.empty()) {
-                preset.steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
-                preset.steps.push_back({ COMPILE_LIGHT, "light", "", false });
-                preset.steps.push_back({ COMPILE_VIS, "vis", "", false });
+                preset.steps = GetOldCompileSteps();
             }
             SetToolPresetVarOld(name, p, preset);
         }
