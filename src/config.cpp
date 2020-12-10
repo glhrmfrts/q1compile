@@ -128,33 +128,65 @@ static std::string GetUserConfigPath()
     return PathJoin(dirname, "q1compile_userprefs-"+ username +".cfg");
 }
 
+static const char* g_compile_step_names[] = {"QBSP", "LIGHT", "VIS", "CUSTOM"};
+
+static const char* CompileStepName(CompileStepType type)
+{
+    return g_compile_step_names[int(type)];
+}
+
+static CompileStepType ParseCompileStepType(const std::string& tstr)
+{
+    const size_t count = sizeof(g_compile_step_names) / sizeof(const char*);
+    for (size_t i = 0; i < count; i++) {
+        if (tstr == g_compile_step_names[i]) {
+            return CompileStepType(i);
+        }
+    }
+    return COMPILE_INVALID;
+}
+
+static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector<CompileStep>& steps)
+{
+    if (name == "compile_step") {
+        std::string typestr;
+        if (p.ParseString(typestr)) {
+            CompileStepType type = ParseCompileStepType(typestr);
+            std::string cmd = "";
+            if (type == COMPILE_QBSP) {
+                cmd = "qbsp";
+            }
+            else if (type == COMPILE_LIGHT) {
+                cmd = "light";
+            }
+            else if (type == COMPILE_VIS) {
+                cmd = "vis";
+            }
+            steps.push_back({ type, cmd, "", false });
+        }
+    }
+    else if (name == "compile_step_cmd") {
+        p.ParseString(steps.back().cmd);
+    }
+    else if (name == "compile_step_args") {
+        p.ParseString(steps.back().args);
+    }
+    else if (name == "compile_step_enabled") {
+        p.ParseBool(steps.back().enabled);
+    }
+}
+
 static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
 {
     bool b = false;
-    if (name == "config_name")
+    if (name == "version") {
+        p.ParseString(config.version);
+    }
+    else if (name == "config_name") {
         p.ParseString(config.config_name);
-    else if (name == "qbsp_args")
-        p.ParseString(config.qbsp_args);
-    else if (name == "light_args")
-        p.ParseString(config.light_args);
-    else if (name == "vis_args")
-        p.ParseString(config.vis_args);
-    else if (name == "quake_args")
+    }
+    else if (name == "quake_args") {
         p.ParseString(config.quake_args);
-    else if (name == "qbsp_enabled") {
-        p.ParseBool(b);
-        if (b)
-            config.tool_flags |= CONFIG_FLAG_QBSP_ENABLED;
-    }
-    else if (name == "light_enabled") {
-        p.ParseBool(b);
-        if (b)
-            config.tool_flags |= CONFIG_FLAG_LIGHT_ENABLED;
-    }
-    else if (name == "vis_enabled") {
-        p.ParseBool(b);
-        if (b)
-            config.tool_flags |= CONFIG_FLAG_VIS_ENABLED;
     }
     else if (name == "watch_map_file") {
         p.ParseBool(config.watch_map_file);
@@ -177,6 +209,13 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
     }
+    else if (name.find("compile_step") != std::string::npos) {
+        SetCompileStepVar(name, p, config.steps);
+    }
+    else if (config.version.empty()) {
+        // old version (< v0.7)
+        SetConfigVarOld(config, name, p);
+    }
     else {
         int idx = -1;
         for (int i = 0; i < PATH_COUNT; i++) {
@@ -194,7 +233,10 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
 
 static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLineParser& p)
 {
-    if (name == "loaded_config") {
+    if (name == "version") {
+        p.ParseString(config.version);
+    }
+    else if (name == "loaded_config") {
         p.ParseString(config.loaded_config);
     }
     else if (name == "last_import_preset_location") {
@@ -225,71 +267,55 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
         if (!p.ParseString(preset.name)) return;
         config.tool_presets.push_back(preset);
     }
-    else if (name == "tool_preset_qbsp_args") {
+    else if (name.find("compile_step") != std::string::npos) {
         auto& preset = config.tool_presets.back();
-        if (!p.ParseString(preset.qbsp_args)) return;
+        SetCompileStepVar(name, p, preset.steps);
     }
-    else if (name == "tool_preset_light_args") {
-        auto& preset = config.tool_presets.back();
-        if (!p.ParseString(preset.light_args)) return;
+    else if (config.version.empty()) {
+        // old version (< v0.7)
+        SetUserConfigVarOld(config, name, p);
     }
-    else if (name == "tool_preset_vis_args") {
-        auto& preset = config.tool_presets.back();
-        if (!p.ParseString(preset.vis_args)) return;
-    }
-    else if (name == "tool_preset_qbsp_enabled") {
-        auto& preset = config.tool_presets.back();
+}
 
-        bool qbsp_enabled;
-        if (!p.ParseBool(qbsp_enabled)) return;
-
-        if (qbsp_enabled) preset.flags |= CONFIG_FLAG_QBSP_ENABLED;
-    }
-    else if (name == "tool_preset_light_enabled") {
-        auto& preset = config.tool_presets.back();
-
-        bool light_enabled;
-        if (!p.ParseBool(light_enabled)) return;
-
-        if (light_enabled) preset.flags |= CONFIG_FLAG_LIGHT_ENABLED;
-    }
-    else if (name == "tool_preset_vis_enabled") {
-        auto& preset = config.tool_presets.back();
-
-        bool vis_enabled;
-        if (!p.ParseBool(vis_enabled)) return;
-
-        if (vis_enabled) preset.flags |= CONFIG_FLAG_VIS_ENABLED;
-    }
+static void WriteCompileStep(std::ofstream& fh, const CompileStep& step)
+{
+    WriteVar(fh, "compile_step", CompileStepName(step.type));
+    WriteVar(fh, "compile_step_cmd", step.cmd);
+    WriteVar(fh, "compile_step_args", step.args);
+    WriteVar(fh, "compile_step_enabled", step.enabled);
 }
 
 static void WriteToolPreset(std::ofstream& fh, const ToolPreset& preset)
 {
     WriteVar(fh, "tool_preset", preset.name);
+    for (const auto& step : preset.steps) {
+        WriteCompileStep(fh, step);
+    }
+#if 0
     WriteVar(fh, "tool_preset_qbsp_args", preset.qbsp_args);
     WriteVar(fh, "tool_preset_light_args", preset.light_args);
     WriteVar(fh, "tool_preset_vis_args", preset.vis_args);
     WriteVar(fh, "tool_preset_qbsp_enabled", (preset.flags & CONFIG_FLAG_QBSP_ENABLED));
     WriteVar(fh, "tool_preset_light_enabled", (preset.flags & CONFIG_FLAG_LIGHT_ENABLED));
     WriteVar(fh, "tool_preset_vis_enabled", (preset.flags & CONFIG_FLAG_VIS_ENABLED));
+#endif
 }
 
 void WriteConfig(const Config& config, const std::string& path)
 {
     std::ofstream fh{ path };
+
+    // write config header
+    WriteVar(fh, "version", APP_VERSION);
     WriteVar(fh, "config_name", config.config_name);
 
+    // write config paths
     for (int i = 0; i < PATH_COUNT; i++) {
         WriteVar(fh, g_config_path_names[i], config.config_paths[i]);
     }
 
-    WriteVar(fh, "qbsp_args", config.qbsp_args);
-    WriteVar(fh, "light_args", config.light_args);
-    WriteVar(fh, "vis_args", config.vis_args);
+    // write config vars
     WriteVar(fh, "quake_args", config.quake_args);
-    WriteVar(fh, "qbsp_enabled", 0 != (config.tool_flags & CONFIG_FLAG_QBSP_ENABLED));
-    WriteVar(fh, "light_enabled", 0 != (config.tool_flags & CONFIG_FLAG_LIGHT_ENABLED));
-    WriteVar(fh, "vis_enabled", 0 != (config.tool_flags & CONFIG_FLAG_VIS_ENABLED));
     WriteVar(fh, "watch_map_file", config.watch_map_file);
     WriteVar(fh, "auto_apply_onlyents", config.auto_apply_onlyents);
     WriteVar(fh, "use_map_mod", config.use_map_mod);
@@ -297,6 +323,11 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "compile_map_on_launch", config.compile_map_on_launch);
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
     WriteVar(fh, "selected_preset", config.selected_preset);
+    
+    // write compile steps
+    for (const auto& step : config.steps) {
+        WriteCompileStep(fh, step);
+    }
 }
 
 Config ReadConfig(const std::string& path)
@@ -320,6 +351,8 @@ void WriteUserConfig(const UserConfig& config)
     std::string path = GetUserConfigPath();
     std::ofstream fh{ path };
 
+    // write user config vars
+    WriteVar(fh, "version", APP_VERSION);
     WriteVar(fh, "loaded_config", config.loaded_config);
     WriteVar(fh, "last_import_preset_location", config.last_import_preset_location);
     WriteVar(fh, "last_export_preset_location", config.last_export_preset_location);
@@ -328,9 +361,12 @@ void WriteUserConfig(const UserConfig& config)
     WriteVar(fh, "ui_section_tools_open", config.ui_section_tools_open);
     WriteVar(fh, "ui_section_other_open", config.ui_section_other_open);
 
+    // write recent configs
     for (const auto& rc : config.recent_configs) {
         WriteVar(fh, "recent_config", rc);
     }
+
+    // write tool presets
     for (const auto& preset : config.tool_presets) {
         if (!preset.builtin) {
             WriteToolPreset(fh, preset);
@@ -366,7 +402,33 @@ UserConfig ReadUserConfig()
 void WriteToolPreset(const ToolPreset& preset, const std::string& path)
 {
     std::ofstream fh{ path };
+
+    // when writing a standalone tool preset file, write the version before everything
+    WriteVar(fh, "version", APP_VERSION);
+
     WriteToolPreset(fh, preset);
+}
+
+static void SetToolPresetVarOld(const std::string& name, ConfigLineParser& p, ToolPreset& preset)
+{
+    if (name == "tool_preset_qbsp_args") {
+        p.ParseString(preset.steps[0].args);
+    }
+    else if (name == "tool_preset_light_args") {
+        p.ParseString(preset.steps[1].args);
+    }
+    else if (name == "tool_preset_vis_args") {
+        p.ParseString(preset.steps[2].args);
+    }
+    else if (name == "tool_preset_qbsp_enabled") {
+        p.ParseBool(preset.steps[0].enabled);
+    }
+    else if (name == "tool_preset_light_enabled") {
+        p.ParseBool(preset.steps[1].enabled);
+    }
+    else if (name == "tool_preset_vis_enabled") {
+        p.ParseBool(preset.steps[2].enabled);
+    }
 }
 
 ToolPreset ReadToolPreset(const std::string& path)
@@ -377,32 +439,23 @@ ToolPreset ReadToolPreset(const std::string& path)
     ToolPreset preset = {};
     ParseConfigFile(path, [&preset](std::string name, ConfigLineParser& p) {
         bool b;
-        if (name == "tool_preset") {
+        if (name == "version") {
+            p.ParseString(preset.version);
+        }
+        else if (name == "tool_preset") {
             p.ParseString(preset.name);
         }
-        else if (name == "tool_preset_qbsp_args") {
-            p.ParseString(preset.qbsp_args);
+        else if (name.find("compile_step") != std::string::npos) {
+            SetCompileStepVar(name, p, preset.steps);
         }
-        else if (name == "tool_preset_light_args") {
-            p.ParseString(preset.light_args);
-        }
-        else if (name == "tool_preset_vis_args") {
-            p.ParseString(preset.vis_args);
-        }
-        else if (name == "tool_preset_qbsp_enabled") {
-            if (p.ParseBool(b)) {
-                preset.flags |= CONFIG_FLAG_QBSP_ENABLED;
+        else if (preset.version.empty()) {
+            // if it's old version (< v0.7)
+            if (preset.steps.empty()) {
+                preset.steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
+                preset.steps.push_back({ COMPILE_LIGHT, "light", "", false });
+                preset.steps.push_back({ COMPILE_VIS, "vis", "", false });
             }
-        }
-        else if (name == "tool_preset_light_enabled") {
-            if (p.ParseBool(b)) {
-                preset.flags |= CONFIG_FLAG_LIGHT_ENABLED;
-            }
-        }
-        else if (name == "tool_preset_vis_enabled") {
-            if (p.ParseBool(b)) {
-                preset.flags |= CONFIG_FLAG_VIS_ENABLED;
-            }
+            SetToolPresetVarOld(name, p, preset);
         }
     });
     return preset;

@@ -4,9 +4,9 @@
 #include <array>
 #include <deque>
 
-#define CONFIG_FLAG_QBSP_ENABLED    0x1
-#define CONFIG_FLAG_LIGHT_ENABLED   0x2
-#define CONFIG_FLAG_VIS_ENABLED     0x4
+//#define CONFIG_FLAG_QBSP_ENABLED    0x1
+//#define CONFIG_FLAG_LIGHT_ENABLED   0x2
+//#define CONFIG_FLAG_VIS_ENABLED     0x4
 
 enum ConfigPath
 {
@@ -19,17 +19,32 @@ enum ConfigPath
     PATH_COUNT
 };
 
+enum CompileStepType
+{
+    COMPILE_QBSP,
+    COMPILE_LIGHT,
+    COMPILE_VIS,
+    COMPILE_CUSTOM,
+    COMPILE_INVALID,
+};
+
+struct CompileStep
+{
+    CompileStepType type;
+    std::string cmd;
+    std::string args;
+    bool enabled = false;
+};
+
 /// Config can be saved and loaded from the path the user chooses
 struct Config
 {
+    std::string version;
     std::string config_name;
     std::array<std::string, PATH_COUNT> config_paths;
+    std::vector<CompileStep> steps;
 
-    std::string qbsp_args;
-    std::string light_args;
-    std::string vis_args;
     std::string quake_args;
-
     std::string selected_preset;
 
     bool watch_map_file;
@@ -38,7 +53,6 @@ struct Config
     bool quake_output_enabled;
     bool compile_map_on_launch;
     bool open_editor_on_launch;
-    int tool_flags;
 
     // Runtime only
     int selected_preset_index;
@@ -46,10 +60,9 @@ struct Config
 
 struct ToolPreset
 {
+    std::string version;
     std::string name;
-    std::string qbsp_args;
-    std::string light_args;
-    std::string vis_args;
+    std::vector<CompileStep> steps;
     int flags = 0;
     bool builtin = false;
 };
@@ -57,6 +70,7 @@ struct ToolPreset
 /// UserConfig gets saved to the user directory
 struct UserConfig
 {
+    std::string                 version;
     std::string                 loaded_config;
     std::string                 last_import_preset_location;
     std::string                 last_export_preset_location;

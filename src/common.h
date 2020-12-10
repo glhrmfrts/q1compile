@@ -10,7 +10,7 @@
 
 #define APP_NAME "Quake 1 Compile GUI"
 
-#define APP_VERSION "v0.6"
+#define APP_VERSION "v0.7"
 
 #define WATCH_MAP_FILE_INTERVAL (1.0f)
 
