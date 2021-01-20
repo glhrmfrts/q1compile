@@ -8,6 +8,8 @@
 #include <mutex>
 #include <functional>
 
+namespace work_queue {
+
 class WorkQueue
 {
     public:
@@ -81,3 +83,4 @@ class WorkQueue
         std::atomic_size_t _pending_jobs;
 };
 
+}

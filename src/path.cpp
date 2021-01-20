@@ -9,6 +9,8 @@
 #include "console.h"
 #include "path.h"
 
+namespace path {
+
 std::wstring Widen(const char* const text, const int size)
 {
     if(!size) return {};
@@ -42,15 +44,15 @@ std::string qc_GetAppDir()
     wchar_t dirname[UNLEN+1];
     DWORD dirname_len = UNLEN+1;
     dirname_len = GetModuleFileNameW(GetModuleHandle(NULL), dirname, dirname_len);
-    return PathDirectory(PathFromNative(Narrow(dirname, dirname_len)));
+    return Directory(FromNative(Narrow(dirname, dirname_len)));
 }
 
 std::string qc_GetTempDir()
 {
     char dirname[UNLEN+1];
     DWORD dirname_len = UNLEN+1;
-    dirname_len = GetTempPathA(dirname_len, dirname);
-    return PathFromNative(std::string(dirname, dirname_len));
+    dirname_len = GetTempA(dirname_len, dirname);
+    return FromNative(std::string(dirname, dirname_len));
 }
 
 std::string qc_GetUserName()
@@ -61,23 +63,23 @@ std::string qc_GetUserName()
     return Narrow(username, username_len - 1);
 }
 
-std::string PathFromNative(std::string path)
+std::string FromNative(std::string path)
 {
 #ifdef _WIN32
-    while (StrReplace(path, "\\", "/")) {}
+    while (common::StrReplace(path, "\\", "/")) {}
 #endif
     return path;
 }
 
-std::string PathToNative(std::string path)
+std::string ToNative(std::string path)
 {
 #ifdef _WIN32
-    while (StrReplace(path, "/", "\\")) {}
+    while (common::StrReplace(path, "/", "\\")) {}
 #endif
     return path;
 }
 
-std::string PathDirectory(std::string filename)
+std::string Directory(std::string filename)
 {
     /* If filename is already a path, return it */
     if(!filename.empty() && filename.back() == '/')
@@ -92,7 +94,7 @@ std::string PathDirectory(std::string filename)
     return filename.substr(0, pos);
 }
 
-std::string PathFilename(std::string filename)
+std::string Filename(std::string filename)
 {
     std::size_t pos = filename.find_last_of('/');
 
@@ -137,7 +139,7 @@ bool SplitExtension(const std::string& filename, std::string& root, std::string&
     return true;
 }
 
-std::string PathJoin(std::string path, std::string filename)
+std::string Join(std::string path, std::string filename)
 {
     /* Empty path */
     if(path.empty()) return filename;
@@ -163,21 +165,21 @@ std::string ConfigurationDir(const std::string& app_name)
 {
 #ifdef _WIN32
     wchar_t path[MAX_PATH];
-    if(!SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
+    if(!SUCCEEDED(SHGetFolderW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
         return {};
-    const std::string appdata{PathFromNative(Narrow(path))};
-    return appdata.empty() ? std::string{} : PathJoin(appdata, app_name);
+    const std::string appdata{FromNative(Narrow(path))};
+    return appdata.empty() ? std::string{} : Join(appdata, app_name);
 #endif
 }
 
-bool PathExists(const std::string& filename)
+bool Exists(const std::string& filename)
 {
 #ifdef _WIN32
     return GetFileAttributesW(Widen(filename).c_str()) != INVALID_FILE_ATTRIBUTES;
 #endif
 }
 
-bool PathIsDirectory(const std::string& path)
+bool IsDirectory(const std::string& path)
 {
 #ifdef _WIN32
     const DWORD fileAttributes = GetFileAttributesW(Widen(path).data());
@@ -189,21 +191,21 @@ bool Copy(const std::string& from, const std::string& to)
 {
     std::FILE* const in = _wfopen(Widen(from).c_str(), L"rb");
     if(!in) {
-        PrintError("Copy: can't open source ");
-        PrintError(from.c_str());
-        PrintError("\n");
+        console::PrintError("Copy: can't open source ");
+        console::PrintError(from.c_str());
+        console::PrintError("\n");
         return false;
     }
-    ScopeGuard close_in{ [in]() { std::fclose(in); } };
+    common::ScopeGuard close_in{ [in]() { std::fclose(in); } };
 
     std::FILE* const out = _wfopen(Widen(to).c_str(), L"wb");
     if(!out) {
-        PrintError("Copy: can't open dest ");
-        PrintError(to.c_str());
-        PrintError("\n");
+        console::PrintError("Copy: can't open dest ");
+        console::PrintError(to.c_str());
+        console::PrintError("\n");
         return false;
     }
-    ScopeGuard close_out{ [out]() { std::fclose(out); } };
+    common::ScopeGuard close_out{ [out]() { std::fclose(out); } };
 
     char buffer[128*1024];
     std::size_t count;
@@ -215,30 +217,30 @@ bool Copy(const std::string& from, const std::string& to)
     return true;
 }
 
-bool CreatePath(const std::string& path)
+bool Create(const std::string& path)
 {
     if(path.empty()) return false;
 
     /* If path contains trailing slash, strip it */
     if(path.back() == '/')
-        return CreatePath(path.substr(0, path.size()-1));
+        return Create(path.substr(0, path.size()-1));
 
     /* If parent directory doesn't exist, create it */
-    const std::string parentPath = PathDirectory(path);
-    if(!parentPath.empty() && !PathExists(parentPath) && !CreatePath(parentPath)) return false;
+    const std::string parent = Directory(path);
+    if(!parent.empty() && !Exists(parent) && !Create(parent)) return false;
 
     /* Create directory, return true if successfully created or already exists */
 
 #ifdef _WIN32
     if(CreateDirectoryW(Widen(path).data(), nullptr) == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-        PrintError("CreatePath: error creating ");
-        PrintError(path.c_str());
-        PrintError(": ");
+        console::PrintError("Create: error creating ");
+        console::PrintError(path.c_str());
+        console::PrintError(": ");
 
-        std::wstring werr = std::wstring((const wchar_t*)ErrorMessage(GetLastError()));
+        std::wstring werr = std::wstring((const wchar_t*)common::ErrorMessage(GetLastError()));
         std::string err = Narrow(werr);
-        PrintError(err.c_str());
-        PrintError("\n");
+        console::PrintError(err.c_str());
+        console::PrintError("\n");
         return false;
     }
 #endif
@@ -246,26 +248,26 @@ bool CreatePath(const std::string& path)
     return true;
 }
 
-bool RemovePath(const std::string& path)
+bool Remove(const std::string& path)
 {
     if (path.empty()) return false;
 
     if (path.back() == '/')
-        return RemovePath(path.substr(0, path.size()-1));
+        return Remove(path.substr(0, path.size()-1));
 
-    if (!PathExists(path))
+    if (!Exists(path))
         return false;
 
 #ifdef _WIN32
     if (DeleteFileW(Widen(path).data()) == 0) {
-        PrintError("RemovePath: error removing ");
-        PrintError(path.c_str());
-        PrintError(": ");
+        console::PrintError("Remove: error removing ");
+        console::PrintError(path.c_str());
+        console::PrintError(": ");
 
-        std::wstring werr = std::wstring((const wchar_t*)ErrorMessage(GetLastError()));
+        std::wstring werr = std::wstring((const wchar_t*)common::ErrorMessage(GetLastError()));
         std::string err = Narrow(werr);
-        PrintError(err.c_str());
-        PrintError("\n");
+        console::PrintError(err.c_str());
+        console::PrintError("\n");
         return false;
     }
 #endif
@@ -285,16 +287,16 @@ bool ReadFileText(const std::string& path, std::string& str)
 {
     std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
     if (!fh) {
-        PrintError("ReadFileText: can't open ");
-        PrintError(path.c_str());
-        PrintError("\n");
+        console::PrintError("ReadFileText: can't open ");
+        console::PrintError(path.c_str());
+        console::PrintError("\n");
         return false;
     }
-    ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+    common::ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
 
     std::size_t size = GetFileSize(fh);
     char* buf = new char[size];
-    ScopeGuard del_buf{ [buf]() { delete[] buf; } };
+    common::ScopeGuard del_buf{ [buf]() { delete[] buf; } };
 
     std::size_t read = std::fread(buf, 1, size, fh);
     str = std::string{ buf, read };
@@ -304,7 +306,7 @@ bool ReadFileText(const std::string& path, std::string& str)
 bool WriteFileText(const std::string& path, const std::string& str)
 {
     std::FILE* const fh = _wfopen(Widen(path).c_str(), L"w");
-    ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+    common::ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
 
     std::fwrite(str.data(), sizeof(char), str.size(), fh);
     return true;
@@ -336,17 +338,19 @@ unsigned long long GetFileModifiedTime(const std::string& path)
     return NativeGetFileModifiedTime(path.c_str());
 }
 
-std::size_t PathGetFileSize(const std::string& path)
+std::size_t GetFileSize(const std::string& path)
 {
     std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
     if (!fh) {
-        PrintError("PathGetFileSize: can't open ");
-        PrintError(path.c_str());
-        PrintError("\n");
+        console::PrintError("GetFileSize: can't open ");
+        console::PrintError(path.c_str());
+        console::PrintError("\n");
         return 0;
     }
-    ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+    common::ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
 
     std::size_t sz = GetFileSize(fh);
     return sz;
+}
+
 }

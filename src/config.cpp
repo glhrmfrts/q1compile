@@ -7,6 +7,8 @@
 #include "common.h"
 #include "path.h"
 
+namespace config {
+
 struct ConfigLineParser
 {
     explicit ConfigLineParser(std::string l) : _line{ l }, _size{ l.size() } {}
@@ -123,9 +125,9 @@ static void ParseConfigFile(const std::string& path, ConfigVarHandler var_handle
 
 static std::string GetUserConfigPath()
 {
-    auto dirname = qc_GetAppDir();
-    auto username = qc_GetUserName();
-    return PathJoin(dirname, "q1compile_userprefs-"+ username +".cfg");
+    auto dirname = path::qc_GetAppDir();
+    auto username = path::qc_GetUserName();
+    return path::Join(dirname, "q1compile_userprefs-"+ username +".cfg");
 }
 
 static const char* g_compile_step_names[] = {"QBSP", "LIGHT", "VIS", "CUSTOM"};
@@ -146,7 +148,7 @@ static CompileStepType ParseCompileStepType(const std::string& tstr)
     return COMPILE_INVALID;
 }
 
-static std::vector<CompileStep> GetOldCompileSteps()
+static std::vector<CompileStep> GetDefaultCompileSteps()
 {
     std::vector<CompileStep> steps;
     steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
@@ -246,7 +248,7 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (config.version.empty()) {
         // old version (< v0.7)
         if (config.steps.empty()) {
-            config.steps = GetOldCompileSteps();
+            config.steps = GetDefaultCompileSteps();
         }
         SetConfigVarOld(config, name, p);
     }
@@ -291,7 +293,7 @@ static void SetUserConfigVarOld(UserConfig& config, std::string name, ConfigLine
 {
     auto& preset = config.tool_presets.back();
     if (preset.steps.empty()) {
-        preset.steps = GetOldCompileSteps();
+        preset.steps = GetDefaultCompileSteps();
     }
     SetToolPresetVarOld(name, p, preset);
 }
@@ -397,7 +399,7 @@ void WriteConfig(const Config& config, const std::string& path)
 
 Config ReadConfig(const std::string& path)
 {
-    if (!PathExists(path))
+    if (!path::Exists(path))
         return {};
 
     Config config = {};
@@ -442,12 +444,12 @@ void WriteUserConfig(const UserConfig& config)
 UserConfig ReadUserConfig()
 {
     std::string path = GetUserConfigPath();
-    std::string oldpath = PathJoin(ConfigurationDir(APP_NAME), "config.cfg");
+    std::string oldpath = path::Join(path::ConfigurationDir(APP_NAME), "config.cfg");
 
-    if (!PathExists(path))
+    if (!path::Exists(path))
         path = oldpath;
     
-    if (!PathExists(path))
+    if (!path::Exists(path))
         return {};
 
     UserConfig config = {};
@@ -476,7 +478,7 @@ void WriteToolPreset(const ToolPreset& preset, const std::string& path)
 
 ToolPreset ReadToolPreset(const std::string& path)
 {
-    if (!PathExists(path))
+    if (!path::Exists(path))
         return {};
 
     ToolPreset preset = {};
@@ -494,7 +496,7 @@ ToolPreset ReadToolPreset(const std::string& path)
         else if (preset.version.empty()) {
             // if it's old version (< v0.7)
             if (preset.steps.empty()) {
-                preset.steps = GetOldCompileSteps();
+                preset.steps = GetDefaultCompileSteps();
             }
             SetToolPresetVarOld(name, p, preset);
         }
@@ -504,8 +506,20 @@ ToolPreset ReadToolPreset(const std::string& path)
 
 void MigrateUserConfig(const UserConfig& cfg)
 {
-    if (!PathExists(GetUserConfigPath())) {
+    if (!path::Exists(GetUserConfigPath())) {
         // write the user config to the new path already
         WriteUserConfig(cfg);
     }
+}
+
+CompileStep* FindCompileStep(std::vector<CompileStep>& steps, CompileStepType t)
+{
+    for (auto& step : steps) {
+        if (step.type == t) {
+            return &step;
+        }
+    }
+    return nullptr;
+}
+
 }

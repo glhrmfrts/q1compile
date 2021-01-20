@@ -4,6 +4,8 @@
 #include <queue>
 #include <mutex>
 
+namespace mutex_char_buffer {
+
 class MutexCharBuffer
 {
     public:
@@ -19,3 +21,5 @@ class MutexCharBuffer
         std::queue<char> _data;
         std::mutex _mutex;
 };
+
+}

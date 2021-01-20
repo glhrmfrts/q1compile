@@ -3,6 +3,8 @@
 #include "map_file.h"
 #include "path.h"
 
+namespace map_file {
+
 struct MapFileParser
 {
     explicit MapFileParser(std::string_view text)
@@ -166,7 +168,7 @@ static bool IsBrushEntityLightField(std::string_view field)
 
 MapFile::MapFile(const std::string& path)
 {
-    ReadFileText(path, _text);
+    path::ReadFileText(path, _text);
 
     MapFileParser parser{ _text };
     _entities = std::move(parser._entities);
@@ -300,4 +302,6 @@ MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b)
     flags |= GetFlagForDiffContent(a.GetEntityContent(), b.GetEntityContent(), MAP_DIFF_ENTS);
     flags |= GetFlagForDiffContent(a.GetLightContent(), b.GetLightContent(), MAP_DIFF_LIGHTS);
     return flags;
+}
+
 }

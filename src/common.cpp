@@ -1,5 +1,7 @@
 #include "common.h"
 
+namespace common {
+
 LPCTSTR ErrorMessage(DWORD error)
 // Routine Description:
 //      Retrieve the system error message for the last-error code
@@ -26,4 +28,6 @@ bool StrReplace(std::string& str, const std::string& from, const std::string& to
         return false;
     str.replace(start_pos, from.length(), to);
     return true;
+}
+
 }

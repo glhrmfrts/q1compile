@@ -5,6 +5,8 @@
 #include <map>
 #include <string_view>
 
+namespace map_file {
+
 typedef unsigned int MapDiffFlags;
 
 static constexpr MapDiffFlags MAP_DIFF_NONE = 0x0;
@@ -37,3 +39,5 @@ struct MapFile
 };
 
 MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b);
+
+}

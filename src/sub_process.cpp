@@ -5,6 +5,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+namespace sub_process {
+
 namespace native_impl {
 
 struct SubProcess {
@@ -157,4 +159,6 @@ bool StartDetachedProcess(const std::string& cmd, const std::string& pwd)
     CloseHandle( pi.hProcess );
     CloseHandle( pi.hThread );
     return true;
+}
+
 }

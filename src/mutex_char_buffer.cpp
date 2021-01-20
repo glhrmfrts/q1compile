@@ -1,5 +1,6 @@
 #include "mutex_char_buffer.h"
 
+namespace mutex_char_buffer {
 
 void MutexCharBuffer::append(const std::string& str)
 {
@@ -25,4 +26,6 @@ char MutexCharBuffer::pop()
 bool MutexCharBuffer::empty() const
 {
     return _data.empty();
+}
+
 }

@@ -2,6 +2,8 @@
 
 #include <string>
 
+namespace file_watcher {
+
 struct FileWatcher
 {
     explicit FileWatcher(const std::string& path, float interval);
@@ -18,3 +20,5 @@ struct FileWatcher
     float _timer;
     bool _enabled;
 };
+
+}

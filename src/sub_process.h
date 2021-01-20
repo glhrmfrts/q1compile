@@ -2,6 +2,8 @@
 
 #include <string>
 
+namespace sub_process {
+
 struct SubProcess
 {
     explicit SubProcess(const std::string& cmd, const std::string& pwd);
@@ -16,3 +18,5 @@ struct SubProcess
 };
 
 bool StartDetachedProcess(const std::string& cmd, const std::string& pwd);
+
+}

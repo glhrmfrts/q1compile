@@ -14,6 +14,8 @@
 
 #define WATCH_MAP_FILE_INTERVAL (1.0f)
 
+namespace common {
+
 struct ScopeGuard
 {
     std::function<void()> func;
@@ -24,3 +26,5 @@ struct ScopeGuard
 LPCTSTR ErrorMessage(DWORD error);
 
 bool StrReplace(std::string& str, const std::string& from, const std::string& to);
+
+}

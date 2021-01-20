@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+namespace console {
+
 enum LogLevel
 {
     LOG_INFO,
@@ -39,4 +41,6 @@ template<typename T> void PrintValue(const T& arg) {
 template<typename T> void PrintValueError(const T& arg) {
     std::string str = std::to_string(arg);
     PrintError(str.c_str());
+}
+
 }

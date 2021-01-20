@@ -8,6 +8,8 @@
 //#define CONFIG_FLAG_LIGHT_ENABLED   0x2
 //#define CONFIG_FLAG_VIS_ENABLED     0x4
 
+namespace config {
+
 enum ConfigPath
 {
     PATH_TOOLS_DIR,
@@ -105,3 +107,7 @@ void WriteToolPreset(const ToolPreset& preset, const std::string& path);
 ToolPreset ReadToolPreset(const std::string& path);
 
 void MigrateUserConfig(const UserConfig& cfg);
+
+CompileStep* FindCompileStep(std::vector<CompileStep>& steps, CompileStepType t);
+
+}

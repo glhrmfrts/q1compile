@@ -1,5 +1,7 @@
 #include "work_queue.h"
 
+namespace work_queue {
+
 void WorkQueue::ThreadLoop(typename WorkQueue::ThreadData* data) {
     auto wq = data->work_queue;
 
@@ -76,4 +78,6 @@ void WorkQueue::SetWorkFinishedCallback(CallbackFuncType callback) {
 }
 
 void WorkQueue::Update() {
+}
+
 }

@@ -2,6 +2,8 @@
 #include <stdexcept>
 #include "shell_command.h"
 
+namespace shell_command {
+
 ShellCommand::ShellCommand(const std::string& cmd, const std::string& pwd)
 {
     handle = _popen(cmd.c_str(), "r");
@@ -20,4 +22,6 @@ bool ShellCommand::ReadChar(char& c)
         return true;
     }
     return false;
+}
+
 }

@@ -6,6 +6,8 @@
 #include "console.h"
 #include "path.h"
 
+namespace console {
+
 static struct ConsoleState {
     std::vector<LogEntry> entries;
     std::unique_ptr<std::ofstream> error_log_file;
@@ -74,7 +76,7 @@ static void PrintLevel(LogLevel level, const char* cstr)
 void SetErrorLogFile(const std::string& path)
 {
     bool append = true;
-    if (PathGetFileSize(path) > (10*1024*1024)) {
+    if (path::GetFileSize(path) > (10*1024*1024)) {
         append = false;
     }
 
@@ -129,4 +131,6 @@ void PrintError(const char* cstr)
 std::vector<LogEntry>& GetLogEntries()
 {
     return g_console.entries;
+}
+
 }

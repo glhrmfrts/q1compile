@@ -2,22 +2,24 @@
 #include "path.h"
 #include "console.h"
 
+namespace file_watcher {
+
 FileWatcher::FileWatcher(const std::string& path, float interval)
     : _path{ path }, _interval{ interval }, _enabled{ true }
 {
-    _prev_modified_time = GetFileModifiedTime(_path);
+    _prev_modified_time = path::GetFileModifiedTime(_path);
 }
 
 void FileWatcher::SetPath(const std::string& path)
 {
     _path = path;
-    _prev_modified_time = GetFileModifiedTime(_path);
+    _prev_modified_time = path::GetFileModifiedTime(_path);
 }
 
 void FileWatcher::SetEnabled(bool enabled)
 {
     _enabled = enabled;
-    if (enabled) _prev_modified_time = GetFileModifiedTime(_path);
+    if (enabled) _prev_modified_time = path::GetFileModifiedTime(_path);
 }
 
 bool FileWatcher::Update(float elapsed_time)
@@ -27,7 +29,7 @@ bool FileWatcher::Update(float elapsed_time)
     bool changed = false;
 
     if (_timer <= 0.0f) {
-        unsigned long long mod_time = GetFileModifiedTime(_path);
+        unsigned long long mod_time = path::GetFileModifiedTime(_path);
         if (mod_time != _prev_modified_time) {
             _prev_modified_time = mod_time;
             changed = true;
@@ -37,4 +39,6 @@ bool FileWatcher::Update(float elapsed_time)
 
     _timer -= elapsed_time;
     return changed;
+}
+
 }
