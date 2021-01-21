@@ -1608,10 +1608,17 @@ static void DrawMainContent()
 
         for (const auto& act : actions) {
             if (act.first != DRAW_COMPILE_STEP_NONE) {
-                console::PrintValue(act.first);
-                console::Print(" ");
-                console::PrintValue(act.second);
-                console::Print("\n");
+                //std::vector<config::CompileStep> new_steps;
+                switch (act.first) {
+                case DRAW_COMPILE_STEP_MOVE_UP:
+                    if (act.second > 0) {
+                        auto step = g_app->current_config.steps[act.second];
+                        g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
+                        g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second - 1), step);
+                    }
+                    break;
+                }
+                //g_app->current_config.steps = new_steps;
             }
         }
 
