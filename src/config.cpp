@@ -132,7 +132,7 @@ static std::string GetUserConfigPath()
 
 static const char* g_compile_step_names[] = {"QBSP", "LIGHT", "VIS", "CUSTOM"};
 
-static const char* CompileStepName(CompileStepType type)
+const char* CompileStepName(CompileStepType type)
 {
     return g_compile_step_names[int(type)];
 }
@@ -161,7 +161,7 @@ static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector
 {
     if (name == "compile_step") {
         std::string typestr;
-        if (p.ParseString(typestr)) {
+        if (p.ParseString(typestr) || p.ParseRawString(typestr)) {
             CompileStepType type = ParseCompileStepType(typestr);
             std::string cmd = "";
             if (type == COMPILE_QBSP) {

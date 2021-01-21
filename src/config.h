@@ -94,6 +94,8 @@ static const char* g_config_path_names[] = {
     "mapsrc_file"
 };
 
+const char* CompileStepName(CompileStepType t);
+
 void WriteConfig(const Config& config, const std::string& path);
 
 Config ReadConfig(const std::string& path);

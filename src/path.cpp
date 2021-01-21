@@ -51,7 +51,7 @@ std::string qc_GetTempDir()
 {
     char dirname[UNLEN+1];
     DWORD dirname_len = UNLEN+1;
-    dirname_len = GetTempA(dirname_len, dirname);
+    dirname_len = GetTempPathA(dirname_len, dirname);
     return FromNative(std::string(dirname, dirname_len));
 }
 
@@ -165,7 +165,7 @@ std::string ConfigurationDir(const std::string& app_name)
 {
 #ifdef _WIN32
     wchar_t path[MAX_PATH];
-    if(!SUCCEEDED(SHGetFolderW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
+    if(!SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
         return {};
     const std::string appdata{FromNative(Narrow(path))};
     return appdata.empty() ? std::string{} : Join(appdata, app_name);

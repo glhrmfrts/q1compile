@@ -5,6 +5,7 @@
 #include "map_file.h"
 #include "path.h"
 #include "q1compile.h"
+#include "sub_process.h"
 
 extern AppState* g_app;
 
@@ -191,6 +192,7 @@ struct CompileJob
 
         if (g_app->stop_compiling) return;
 
+        // Execute compile steps
         for (const auto& step : config.steps) {
             if (g_app->stop_compiling) return;
             if (!step.enabled) continue;
@@ -306,6 +308,39 @@ struct HelpJob
     }
 };
 
+template<class T>
+static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, mutex_char_buffer::MutexCharBuffer* out)
+{
+    char c;
+    while (obj.ReadChar(c)) {
+        if (out) {
+            out->push(c);
+        }
+        if (stop && *stop) {
+            return;
+        }
+    }
+}
+
+static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output)
+{
+    sub_process::SubProcess proc{ cmd, pwd };
+    if (!proc.Good()) {
+        console::PrintError(cmd.c_str());
+        console::PrintError(": failed to open subprocess\n");
+        return;
+    }
+
+    auto output = &g_app->compile_output;
+    if (suppress_output) {
+        output = nullptr;
+    }
+
+    console::SetPrintToFile(false);
+    ReadToMutexCharBuffer(proc, &g_app->stop_compiling, output);
+    console::SetPrintToFile(true);
+}
+
 static void ReportCopy(const std::string& from_path, const std::string& to_path)
 {
     g_app->compile_output.append("Copied ");
@@ -338,10 +373,10 @@ static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const m
 
 static std::string ReplaceCompileVars(const std::string& args, const config::Config& cfg)
 {
-    
+    return args;
 }
 
-void StartCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff = false)
+void StartCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff)
 {
     g_app->console_auto_scroll = true;
     g_app->console_lock_scroll = true;
@@ -360,7 +395,7 @@ void StartHelpJob(config::CompileStepType cstype)
     g_app->compile_queue->AddWork(0, HelpJob{ g_app->current_config, cstype });
 }
 
-void EnqueueCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff = false)
+void EnqueueCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff)
 {
     g_app->compile_queue->AddWork(0, CompileJob{ cfg, run_quake, ignore_diff });
 }
