@@ -94,6 +94,11 @@ static void WriteVar(std::ofstream& fh, const std::string& name, const std::stri
     fh << "\"" << value << "\"" << "\n";
 }
 
+static void WriteVar(std::ofstream& fh, const std::string& name, const char* value)
+{
+    WriteVar(fh, name, std::string(value));
+}
+
 static void WriteVar(std::ofstream& fh, const std::string& name, bool value)
 {
     WriteVarName(fh, name);
@@ -134,6 +139,8 @@ static const char* g_compile_step_names[] = {"QBSP", "LIGHT", "VIS", "CUSTOM"};
 
 const char* CompileStepName(CompileStepType type)
 {
+    if (type >= COMPILE_INVALID) return "INVALID";
+
     return g_compile_step_names[int(type)];
 }
 
@@ -165,18 +172,19 @@ static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector
             CompileStepType type = ParseCompileStepType(typestr);
             std::string cmd = "";
             if (type == COMPILE_QBSP) {
-                cmd = "qbsp";
+                cmd = "qbsp.exe";
             }
             else if (type == COMPILE_LIGHT) {
-                cmd = "light";
+                cmd = "light.exe";
             }
             else if (type == COMPILE_VIS) {
-                cmd = "vis";
+                cmd = "vis.exe";
             }
             steps.push_back({ type, cmd, "", false });
         }
     }
     else if (name == "compile_step_cmd") {
+        steps.back().cmd.clear();
         p.ParseString(steps.back().cmd);
     }
     else if (name == "compile_step_args") {
@@ -245,13 +253,6 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name.find("compile_step") != std::string::npos) {
         SetCompileStepVar(name, p, config.steps);
     }
-    else if (config.version.empty()) {
-        // old version (< v0.7)
-        if (config.steps.empty()) {
-            config.steps = GetDefaultCompileSteps();
-        }
-        SetConfigVarOld(config, name, p);
-    }
     else {
         int idx = -1;
         for (int i = 0; i < PATH_COUNT; i++) {
@@ -262,7 +263,16 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
         }
 
         if (idx != -1) {
-            p.ParseString( config.config_paths[idx] );
+            p.ParseString(config.config_paths[idx]);
+        }
+        else {
+            if (config.version.empty()) {
+                // old version (< v0.7)
+                if (config.steps.empty()) {
+                    config.steps = GetDefaultCompileSteps();
+                }
+                SetConfigVarOld(config, name, p);
+            }
         }
     }
 }

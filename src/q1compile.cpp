@@ -21,25 +21,32 @@
 #include "../include/imgui_markdown.h" // https://github.com/juliettef/imgui_markdown/
 #include "fonts/icofont.h"
 
+enum DrawCompileStepAction {
+    DRAW_COMPILE_STEP_NONE,
+    DRAW_COMPILE_STEP_MOVE_UP,
+    DRAW_COMPILE_STEP_MOVE_DOWN,
+    DRAW_COMPILE_STEP_REMOVE
+};
+
 static const ImVec4 INPUT_TEXT_READ_ONLY_COLOR{ 0.15f, 0.15f, 0.195f, 1.0f };
 
 AppState* g_app = nullptr;
 
 static std::vector<config::ToolPreset> g_builtin_presets = {
     config::ToolPreset{
+                "",
         "No Vis (built-in)",
-        "",
         {
             config::CompileStep{
                 config::COMPILE_QBSP,
-                "qbsp",
+                "qbsp.exe",
                 "",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_LIGHT,
-                "light",
+                "light.exe",
                 "",
                 true,
                 0
@@ -49,19 +56,20 @@ static std::vector<config::ToolPreset> g_builtin_presets = {
         true
     },
     config::ToolPreset{
+                "",
         "No Vis, only ents (built-in)",
-        "",
+        
         {
             config::CompileStep{
                 config::COMPILE_QBSP,
-                "qbsp",
+                "qbsp.exe",
                 "-onlyents",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_LIGHT,
-                "light",
+                "light.exe",
                 "-onlyents",
                 true,
                 0
@@ -71,26 +79,27 @@ static std::vector<config::ToolPreset> g_builtin_presets = {
         true
     },
     config::ToolPreset{
+                "",
         "Fast Vis (built-in)",
-        "",
+        
         {
             config::CompileStep{
                 config::COMPILE_QBSP,
-                "qbsp",
+                "qbsp.exe",
                 "",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_LIGHT,
-                "light",
+                "light.exe",
                 "",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_VIS,
-                "vis",
+                "vis.exe",
                 "-fast",
                 true,
                 0
@@ -100,26 +109,27 @@ static std::vector<config::ToolPreset> g_builtin_presets = {
         true
     },
     config::ToolPreset{
+                "",
         "Full (built-in)",
-        "",
+        
         {
             config::CompileStep{
                 config::COMPILE_QBSP,
-                "qbsp",
+                "qbsp.exe",
                 "",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_LIGHT,
-                "light",
+                "light.exe",
                 "-extra4 -soft",
                 true,
                 0
             },
             config::CompileStep{
                 config::COMPILE_VIS,
-                "vis",
+                "vis.exe",
                 "-level 4",
                 true,
                 0
@@ -608,7 +618,27 @@ static void HandleToolHelp(config::CompileStepType cstype)
     g_app->console_auto_scroll = false;
     g_app->console_lock_scroll = false;
     console::ClearConsole();
-    compile::StartHelpJob(cstype);
+
+    if (cstype != config::COMPILE_CUSTOM)
+    {
+        compile::StartHelpJob(cstype);
+    }
+    else
+    {
+        console::Print("Variables for custom commands:\n\n");
+        console::Print("    {{MAP_FILE}} - .map file being compiled\n");
+        console::Print("    {{BSP_FILE}} - .bsp file being compiled\n");
+        console::Print("    {{MAP_FILE_BASENAME}} - .map file being compiled (filename only, without directory)\n");
+        console::Print("    {{MAP_FILE_BASENAME_NOEXT}} - .map file being compiled (filename only, without directory and without extension)\n");
+        console::Print("    {{MAP_SOURCE_FILE}} - source .map file, the one you save in the editor\n");
+        console::Print("    {{MAP_SOURCE_DIR}} - directory where the source .map file is\n");
+        console::Print("    {{TOOLS_DIR}} - tools directory\n");
+        console::Print("    {{WORK_DIR}} - work directory\n");
+        console::Print("    {{OUTPUT_DIR}} - output directory\n");
+        console::Print("    {{ENGINE_EXE}} - Quake engine executable\n");
+        console::Print("    {{EDITOR_EXE}} - Editor executable\n");
+        console::Print("    {{DS}} - Directory separator\n");
+    }
 }
 
 static void HandlePathSelect(config::ConfigPath path)
@@ -877,6 +907,35 @@ static void HandleOpenEditor()
     LaunchEditorProcess(cmd);
 }
 
+static void HandleCompileStepActions(const std::vector<std::pair<DrawCompileStepAction, int>>& actions)
+{
+    for (const auto& act : actions) {
+        if (act.first != DRAW_COMPILE_STEP_NONE) {
+            //std::vector<config::CompileStep> new_steps;
+            switch (act.first) {
+            case DRAW_COMPILE_STEP_MOVE_UP:
+                if (act.second > 0) {
+                    auto step = g_app->current_config.steps[act.second];
+                    g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
+                    g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second - 1), step);
+                }
+                break;
+            case DRAW_COMPILE_STEP_MOVE_DOWN:
+                if (act.second < g_app->current_config.steps.size() - 1) {
+                    auto step = g_app->current_config.steps[act.second];
+                    g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
+                    g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second + 1), step);
+                }
+                break;
+            case DRAW_COMPILE_STEP_REMOVE:
+                g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
+                break;
+            }
+            //g_app->current_config.steps = new_steps;
+        }
+    }
+}
+
 /*
 ====================
 UI Drawing
@@ -1124,13 +1183,6 @@ static void DrawPresetCombo()
     }
 }
 
-enum DrawCompileStepAction {
-    DRAW_COMPILE_STEP_NONE,
-    DRAW_COMPILE_STEP_MOVE_UP,
-    DRAW_COMPILE_STEP_MOVE_DOWN,
-    DRAW_COMPILE_STEP_REMOVE
-};
-
 static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileStep& cs, int idx)
 {
     static const float spacings[] = { 45.0f, 37.0f, 52.0f };
@@ -1149,38 +1201,78 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
     //DrawSpacing(1, 0); ImGui::SameLine();
 
     const char* label = config::CompileStepName(cs.type);
-    if (ImGui::Checkbox(label, &cs.enabled)) {
+    if (ImGui::Checkbox("##enabled", &cs.enabled)) {
         changed = true;
     }
     ImGui::SameLine();
-    DrawSpacing(9.0f + spacings[cs.type], 0);
+
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::BeginCombo("##type", label))
+    {
+        if (ImGui::Selectable("QBSP", cs.type == config::COMPILE_QBSP))
+        {
+            cs.type = config::COMPILE_QBSP;
+        }
+        if (ImGui::Selectable("LIGHT", cs.type == config::COMPILE_LIGHT))
+        {
+            cs.type = config::COMPILE_LIGHT;
+        }
+        if (ImGui::Selectable("VIS", cs.type == config::COMPILE_VIS))
+        {
+            cs.type = config::COMPILE_VIS;
+        }
+        if (ImGui::Selectable("CUSTOM", cs.type == config::COMPILE_CUSTOM))
+        {
+            cs.type = config::COMPILE_CUSTOM;
+        }
+        ImGui::EndCombo();
+    }
     ImGui::SameLine();
+
+    DrawSpacing(1.0f, 0);
+    ImGui::SameLine();
+
+    const float wref = 1252;
+    const float wmul = std::fmaxf(1.0f, ImGui::GetWindowContentRegionWidth() / wref);
 
     switch (cs.type) {
     case config::COMPILE_QBSP:
     case config::COMPILE_LIGHT:
     case config::COMPILE_VIS:
-        ImGui::SetNextItemWidth(200);
+        ImGui::SetNextItemWidth(200*wmul);
         if (ImGui::InputTextWithHint("##cmd", "command", &cs.cmd)) {
             changed = true;
             ReportConfigChange(std::string(label) + " command", cs.cmd);
         }
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(550);
-        if (ImGui::InputTextWithHint("##args", "arguments", &cs.args)) {
+        ImGui::SetNextItemWidth(550*wmul);
+        if (ImGui::InputTextWithHint("##args", "arguments (map file will be added automatically)", &cs.args)) {
             changed = true;
             ReportConfigChange(std::string(label) + " args", cs.args);
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Help")) {
-            HandleToolHelp(cs.type);
+        break;
+    case config::COMPILE_CUSTOM:
+        ImGui::SetNextItemWidth(758*wmul);
+        if (ImGui::InputTextWithHint("##cmd", "command (click help for variables)", &cs.cmd)) {
+            changed = true;
+            ReportConfigChange(std::string(label) + " command", cs.cmd);
         }
-        ImGui::SameLine();
+        break;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Help")) {
+        HandleToolHelp(cs.type);
+    }
+    ImGui::SameLine();
+
+    {
+        // move or remove actions    
 
         DrawSpacing(1, 0); ImGui::SameLine();
         ImGui::Text("|"); ImGui::SameLine();
         DrawSpacing(1, 0); ImGui::SameLine();
-         
+
         if (ImGui::Button(ICOFONT_CARET_UP)) {
             action = DRAW_COMPILE_STEP_MOVE_UP;
         }
@@ -1195,8 +1287,8 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
             action = DRAW_COMPILE_STEP_REMOVE;
         }
         ImGui::SameLine();
-        break;
     }
+
     ImGui::NewLine();
 
     ImGui::PopID();
@@ -1605,22 +1697,7 @@ static void DrawMainContent()
             std::tie(action, changed) = DrawCompileStep(g_app->current_config.steps[i], i);
             actions.emplace_back(action, i);
         }
-
-        for (const auto& act : actions) {
-            if (act.first != DRAW_COMPILE_STEP_NONE) {
-                //std::vector<config::CompileStep> new_steps;
-                switch (act.first) {
-                case DRAW_COMPILE_STEP_MOVE_UP:
-                    if (act.second > 0) {
-                        auto step = g_app->current_config.steps[act.second];
-                        g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
-                        g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second - 1), step);
-                    }
-                    break;
-                }
-                //g_app->current_config.steps = new_steps;
-            }
-        }
+        HandleCompileStepActions(actions);
 
         if (ImGui::Button(ICOFONT_PLUS)) {
 
@@ -1732,7 +1809,23 @@ static void DrawMainWindow()
     ImGui::SetNextWindowSize(ImVec2{ (float)g_app->window_width, (float)g_app->window_height }, ImGuiCond_Always);
     if (ImGui::Begin("##main", nullptr, flags)) {
         if (ImGui::BeginChild("##content", ImVec2{ (float)g_app->window_width - 28, (float)g_app->window_height - 28 } )) {
-            DrawMainContent();
+
+            ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_TabListPopupButton | ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
+            if (ImGui::BeginTabBar("configs", tab_bar_flags))
+            {
+                static bool opened = true;
+                if (ImGui::BeginTabItem(g_app->current_config.config_name.c_str(), &opened, ImGuiTabItemFlags_None))
+                {
+                    DrawMainContent();
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem(ICOFONT_PLUS, nullptr, ImGuiTabItemFlags_NoTooltip))
+                {
+                    ImGui::Text("asdasd");
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
         }
         ImGui::EndChild();
     }
@@ -1886,6 +1979,8 @@ bool qc_render()
         char c = g_app->compile_output.pop();
         console::Print(c);
     }
+
+    ImGui::ShowDemoWindow();
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.9f, 0.9f, 0.9f, 1.0f });
     DrawMenuBar();

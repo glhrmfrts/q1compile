@@ -356,16 +356,16 @@ static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const m
     auto flags = map_file::GetDiffFlags(map_a, map_b);
 
     if (flags & map_file::MAP_DIFF_BRUSHES) {
-        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp", "", true, 0});
-        pre.steps.push_back(config::CompileStep{config::COMPILE_LIGHT, "light", "", true, 0});
-        pre.steps.push_back(config::CompileStep{config::COMPILE_VIS, "vis", "", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp.exe", "", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_LIGHT, "light.exe", "", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_VIS, "vis.exe", "", true, 0});
     }
     else if (flags & map_file::MAP_DIFF_LIGHTS) {
-        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp", "-onlyents", true, 0});
-        pre.steps.push_back(config::CompileStep{config::COMPILE_LIGHT, "light", "", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp.exe", "-onlyents", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_LIGHT, "light.exe", "", true, 0});
     }
     else if (flags & map_file::MAP_DIFF_ENTS) {
-        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp", "-onlyents", true, 0});
+        pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp.exe", "-onlyents", true, 0});
     }
     
     return pre;
