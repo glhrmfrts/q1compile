@@ -5,6 +5,7 @@
 #include "map_file.h"
 #include "path.h"
 #include "q1compile.h"
+#include "shell_command.h"
 #include "sub_process.h"
 
 extern AppState* g_app;
@@ -16,6 +17,8 @@ namespace compile {
 Async jobs
 =================
 */
+
+static void ExecuteCompileCommand(const std::string& cmd, const std::string& pwd, bool suppress_output = false);
 
 static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output = false);
 
@@ -197,29 +200,37 @@ struct CompileJob
             if (g_app->stop_compiling) return;
             if (!step.enabled) continue;
 
-            g_app->compile_output.append("Starting: " + step.cmd + " " + step.args + "\n");
-
-            // Define step args
-            std::string args = ReplaceCompileVars(step.args, config);
-            switch (step.type) {
-            case config::COMPILE_QBSP:
-                args += " " + work_map;
-                copy_bsp = true;
-                break;
-
-            case config::COMPILE_LIGHT:
-                args += " " + work_bsp;
-                copy_lit = true;
-                break;
-
-            case config::COMPILE_VIS:
-                break;
+            if (step.type == config::COMPILE_CUSTOM) {
+                auto cmd = ReplaceCompileVars(step.cmd, config);
+                g_app->compile_output.append("Starting: " + cmd + "\n");
+                g_app->compile_status = cmd;
+                ExecuteCompileCommand(cmd, "");
+                g_app->compile_output.append("Finished: " + cmd + "\n");
             }
+            else {
+                // Define step args
+                std::string args = ReplaceCompileVars(step.args, config);
+                switch (step.type) {
+                case config::COMPILE_QBSP:
+                    args += " " + work_map;
+                    copy_bsp = true;
+                    break;
 
-            if (!RunTool(step.cmd, step.args)) return;
+                case config::COMPILE_LIGHT:
+                    args += " " + work_bsp;
+                    copy_lit = true;
+                    break;
 
-            g_app->compile_output.append("Finished: " + step.cmd + "\n");
-            g_app->compile_output.append("------------------------------------------------\n");
+                case config::COMPILE_VIS:
+                    args += " " + work_bsp;
+                    break;
+                }
+
+                g_app->compile_output.append("Starting: " + step.cmd + " " + args + "\n");
+                if (!RunTool(step.cmd, args)) return;
+                g_app->compile_output.append("Finished: " + step.cmd + " " + args + "\n");
+                g_app->compile_output.append("------------------------------------------------\n");
+            }
         }
 
         if (copy_bsp && path::Exists(work_bsp)) {
@@ -320,6 +331,25 @@ static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, mutex_char_buf
             return;
         }
     }
+}
+
+static void ExecuteCompileCommand(const std::string& cmd, const std::string& pwd, bool suppress_output)
+{
+    shell_command::ShellCommand proc{ cmd, pwd };
+    if (!proc.Good()) {
+        console::PrintError(cmd.c_str());
+        console::PrintError(": failed to execute command\n");
+        return;
+    }
+
+    auto output = &g_app->compile_output;
+    if (suppress_output) {
+        output = nullptr;
+    }
+
+    console::SetPrintToFile(false);
+    ReadToMutexCharBuffer(proc, &g_app->stop_compiling, output);
+    console::SetPrintToFile(true);
 }
 
 static void ExecuteCompileProcess(const std::string& cmd, const std::string& pwd, bool suppress_output)

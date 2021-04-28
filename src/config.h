@@ -82,6 +82,7 @@ struct UserConfig
     bool                        ui_section_info_open;
     bool                        ui_section_paths_open;
     bool                        ui_section_tools_open;
+    bool                        ui_section_engine_open;
     bool                        ui_section_other_open;
 };
 
@@ -111,5 +112,7 @@ ToolPreset ReadToolPreset(const std::string& path);
 void MigrateUserConfig(const UserConfig& cfg);
 
 CompileStep* FindCompileStep(std::vector<CompileStep>& steps, CompileStepType t);
+
+std::vector<CompileStep> GetDefaultCompileSteps();
 
 }

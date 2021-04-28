@@ -10,6 +10,8 @@ struct ShellCommand
 
     ~ShellCommand();
 
+    bool Good() const;
+
     bool ReadChar(char& c);
 
     FILE* handle;

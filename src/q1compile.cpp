@@ -25,7 +25,8 @@ enum DrawCompileStepAction {
     DRAW_COMPILE_STEP_NONE,
     DRAW_COMPILE_STEP_MOVE_UP,
     DRAW_COMPILE_STEP_MOVE_DOWN,
-    DRAW_COMPILE_STEP_REMOVE
+    DRAW_COMPILE_STEP_REMOVE,
+    DRAW_COMPILE_STEP_ADD,
 };
 
 static const ImVec4 INPUT_TEXT_READ_ONLY_COLOR{ 0.15f, 0.15f, 0.195f, 1.0f };
@@ -109,7 +110,7 @@ static std::vector<config::ToolPreset> g_builtin_presets = {
         true
     },
     config::ToolPreset{
-                "",
+        "",
         "Full (built-in)",
         
         {
@@ -159,10 +160,10 @@ static std::vector<const char*> g_config_paths_filter = {
 };
 
 static std::vector<const char*> g_config_paths_help = {
-    "Where the compiler tools are (qbsp.exe, light.exe, vis.exe)",
-    "Temporary dir to work with files, it MUST NOT be the same as the map source directory",
+    "Where the compiler tools are (qbsp.exe, light.exe, vis.exe), check the menu \"Download compiler tools\" if you don't have them yet",
+    "Temporary dir to work with files, it MUST NOT be the same as the map source directory. If you don't care about this setting, leave it in the default value (see \"Reset work dir\" menu)",
     "Where the compiled .bsp and .lit files will be",
-    "The map editor executable (optional)",
+    "The map editor executable, only required if you want to use the option or menu \"Open map in editor\", otherwise it's okay to leave it blank",
     "The Quake engine executable",
     "The .map file to compile"
 };
@@ -907,33 +908,37 @@ static void HandleOpenEditor()
     LaunchEditorProcess(cmd);
 }
 
-static void HandleCompileStepActions(const std::vector<std::pair<DrawCompileStepAction, int>>& actions)
+static void HandleCompileStepAction(std::vector<config::CompileStep>& steps, DrawCompileStepAction act, int idx)
 {
-    for (const auto& act : actions) {
-        if (act.first != DRAW_COMPILE_STEP_NONE) {
-            //std::vector<config::CompileStep> new_steps;
-            switch (act.first) {
-            case DRAW_COMPILE_STEP_MOVE_UP:
-                if (act.second > 0) {
-                    auto step = g_app->current_config.steps[act.second];
-                    g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
-                    g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second - 1), step);
-                }
-                break;
-            case DRAW_COMPILE_STEP_MOVE_DOWN:
-                if (act.second < g_app->current_config.steps.size() - 1) {
-                    auto step = g_app->current_config.steps[act.second];
-                    g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
-                    g_app->current_config.steps.insert(g_app->current_config.steps.begin() + (act.second + 1), step);
-                }
-                break;
-            case DRAW_COMPILE_STEP_REMOVE:
-                g_app->current_config.steps.erase(g_app->current_config.steps.begin() + act.second);
-                break;
+    if (act != DRAW_COMPILE_STEP_NONE) {
+        switch (act) {
+        case DRAW_COMPILE_STEP_MOVE_UP:
+            if (idx > 0) {
+                auto step = steps[idx];
+                steps.erase(steps.begin() + idx);
+                steps.insert(steps.begin() + (idx - 1), step);
             }
-            //g_app->current_config.steps = new_steps;
+            break;
+        case DRAW_COMPILE_STEP_MOVE_DOWN:
+            if (idx < steps.size() - 1) {
+                auto step = steps[idx];
+                steps.erase(steps.begin() + idx);
+                steps.insert(steps.begin() + (idx + 1), step);
+            }
+            break;
+        case DRAW_COMPILE_STEP_REMOVE:
+            steps.erase(steps.begin() + idx);
+            break;
+        case DRAW_COMPILE_STEP_ADD:
+            steps.push_back(config::CompileStep{ config::COMPILE_CUSTOM, "", "", true, 0 });
+            break;
         }
     }
+}
+
+static void OpenLink(const std::string& link)
+{
+    shell_command::ShellCommand cmd("start " + link, "");
 }
 
 /*
@@ -1063,6 +1068,23 @@ static void DrawMenuBar()
             if (ImGui::MenuItem("About", "", nullptr)) {
                 g_app->show_help_window = true;
             }
+            if (ImGui::MenuItem("Issue Tracker", "", nullptr)) {
+                OpenLink("https://github.com/glhrmfrts/q1compile/issues");
+            }
+            if (ImGui::MenuItem("Check for updates", "", nullptr)) {
+                OpenLink("https://github.com/glhrmfrts/q1compile/releases");
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Quake Mapping tutorials", "", nullptr)) {
+                OpenLink("https://www.youtube.com/channel/UCF502yOYr_olPaw6xgnYmaQ");
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Download compiler tools", "", nullptr)) {
+                OpenLink("https://ericwa.github.io/ericw-tools/");
+            }
+            if (ImGui::MenuItem("Download TrenchBroom map editor", "", nullptr)) {
+                OpenLink("https://trenchbroom.github.io/");
+            }
             ImGui::EndMenu();
         }
 
@@ -1183,47 +1205,56 @@ static void DrawPresetCombo()
     }
 }
 
-static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileStep& cs, int idx)
+static bool g_inpresetwindow;
+
+static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileStep& cs, int idx, ImGuiInputTextFlags flags)
 {
     static const float spacings[] = { 45.0f, 37.0f, 52.0f };
 
     DrawCompileStepAction action = DRAW_COMPILE_STEP_NONE;
     bool changed = false;
+    bool readonly = (flags & ImGuiInputTextFlags_ReadOnly);
 
     ImGui::PushID(idx);
 
-    //ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.5f, 0.5f, 0.5f, 0.5f });
-    //ImGui::Text(ICOFONT_LISTING_BOX); ImGui::SameLine();
-    //ImGui::PopStyleColor(1);
-
-    //DrawSpacing(1, 0); ImGui::SameLine();
-    //ImGui::Text("|"); ImGui::SameLine();
-    //DrawSpacing(1, 0); ImGui::SameLine();
-
     const char* label = config::CompileStepName(cs.type);
-    if (ImGui::Checkbox("##enabled", &cs.enabled)) {
-        changed = true;
+
+    if (!readonly) {
+        if (ImGui::Checkbox("##enabled", &cs.enabled)) {
+            changed = true;
+        }
     }
+    else {
+        bool dummy = cs.enabled;
+        ImGui::Checkbox("##enabled", &dummy);
+    }
+
     ImGui::SameLine();
 
+    ImGuiComboFlags comboflags = 0;
+    if (readonly) {
+        comboflags |= ImGuiComboFlags_NoArrowButton;
+    }
+
     ImGui::SetNextItemWidth(80.0f);
-    if (ImGui::BeginCombo("##type", label))
-    {
-        if (ImGui::Selectable("QBSP", cs.type == config::COMPILE_QBSP))
-        {
-            cs.type = config::COMPILE_QBSP;
-        }
-        if (ImGui::Selectable("LIGHT", cs.type == config::COMPILE_LIGHT))
-        {
-            cs.type = config::COMPILE_LIGHT;
-        }
-        if (ImGui::Selectable("VIS", cs.type == config::COMPILE_VIS))
-        {
-            cs.type = config::COMPILE_VIS;
-        }
-        if (ImGui::Selectable("CUSTOM", cs.type == config::COMPILE_CUSTOM))
-        {
-            cs.type = config::COMPILE_CUSTOM;
+    if (ImGui::BeginCombo("##type", label, comboflags)) {
+        if (!readonly) {
+            if (ImGui::Selectable("QBSP", cs.type == config::COMPILE_QBSP))
+            {
+                cs.type = config::COMPILE_QBSP;
+            }
+            if (ImGui::Selectable("LIGHT", cs.type == config::COMPILE_LIGHT))
+            {
+                cs.type = config::COMPILE_LIGHT;
+            }
+            if (ImGui::Selectable("VIS", cs.type == config::COMPILE_VIS))
+            {
+                cs.type = config::COMPILE_VIS;
+            }
+            if (ImGui::Selectable("CUSTOM", cs.type == config::COMPILE_CUSTOM))
+            {
+                cs.type = config::COMPILE_CUSTOM;
+            }
         }
         ImGui::EndCombo();
     }
@@ -1233,27 +1264,28 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
     ImGui::SameLine();
 
     const float wref = 1252;
-    const float wmul = std::fmaxf(1.0f, ImGui::GetWindowContentRegionWidth() / wref);
+    float wmul = std::fmaxf(1.0f, ImGui::GetWindowContentRegionWidth() / wref);
+    wmul *= g_inpresetwindow ? 0.75f : 1.0f;
 
     switch (cs.type) {
     case config::COMPILE_QBSP:
     case config::COMPILE_LIGHT:
     case config::COMPILE_VIS:
         ImGui::SetNextItemWidth(200*wmul);
-        if (ImGui::InputTextWithHint("##cmd", "command", &cs.cmd)) {
+        if (ImGui::InputTextWithHint("##cmd", "command", &cs.cmd, flags)) {
             changed = true;
             ReportConfigChange(std::string(label) + " command", cs.cmd);
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(550*wmul);
-        if (ImGui::InputTextWithHint("##args", "arguments (map file will be added automatically)", &cs.args)) {
+        if (ImGui::InputTextWithHint("##args", "arguments (map file will be added automatically)", &cs.args, flags)) {
             changed = true;
             ReportConfigChange(std::string(label) + " args", cs.args);
         }
         break;
     case config::COMPILE_CUSTOM:
         ImGui::SetNextItemWidth(758*wmul);
-        if (ImGui::InputTextWithHint("##cmd", "command (click help for variables)", &cs.cmd)) {
+        if (ImGui::InputTextWithHint("##cmd", "command (click help for variables)", &cs.cmd, flags)) {
             changed = true;
             ReportConfigChange(std::string(label) + " command", cs.cmd);
         }
@@ -1266,8 +1298,8 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
     }
     ImGui::SameLine();
 
-    {
-        // move or remove actions    
+    if (!readonly) {
+        // move or remove actions
 
         DrawSpacing(1, 0); ImGui::SameLine();
         ImGui::Text("|"); ImGui::SameLine();
@@ -1296,26 +1328,56 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
     return std::make_pair(action, changed);
 }
 
-static bool DrawToolParams(const char* label, config::CompileStepType cstype, std::string& args, float spacing)
+template <typename Handler> static void DrawCompileSteps(std::vector<config::CompileStep>& steps, ImGuiInputTextFlags flags, Handler&& HandleAction)
 {
-    /*
-    if (ImGui::InputTextWithHint("", "command-line arguments", &args)) {
+    static std::vector<std::pair<DrawCompileStepAction, int>> actions;
+    actions.clear();
+
+    bool readonly = flags & ImGuiInputTextFlags_ReadOnly;
+
+    if (readonly) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, INPUT_TEXT_READ_ONLY_COLOR);
+    }
+
+    for (size_t i = 0; i < steps.size(); i++) {
+        DrawCompileStepAction action;
+        bool changed;
+        std::tie(action, changed) = DrawCompileStep(steps[i], i, flags);
+        actions.emplace_back(action, i);
+    }
+
+    if (!readonly) {
+        if (ImGui::Button(ICOFONT_PLUS)) {
+            actions.push_back({ DRAW_COMPILE_STEP_ADD, 0 });
+        }
+    }
+
+    if (readonly) {
+        ImGui::PopStyleColor();
+    }
+
+    for (const auto& action : actions) {
+        HandleAction(steps, action.first, action.second);
+    }
+}
+
+static bool DrawEngineParams(const char* label, std::string& args, float spacing)
+{
+    bool changed = false;
+
+    ImGui::Text(label);
+
+    ImGui::SameLine();
+
+    DrawSpacing(spacing, 0);
+    ImGui::SameLine();
+
+    if (ImGui::InputTextWithHint("##engineparams", "command-line arguments", &args)) {
         changed = true;
         ReportConfigChange(std::string(label) + " args", args);
     }
 
-    if (tool_flag) {
-        ImGui::SameLine();
-        if (ImGui::Button("Help")) {
-            HandleToolHelp(tool_flag);
-        }
-    }
-
-    ImGui::PopID();
-
     return changed;
-    */
-    return false;
 }
 
 static bool DrawPresetToolParams(config::ToolPreset& preset, const char* label, int tool_flag, std::string& args, float spacing, ImGuiInputTextFlags flags = 0)
@@ -1392,6 +1454,47 @@ static void DrawConsoleView()
     ImGui::EndChild();
 }
 
+static void DrawWarningsView()
+{
+    float height = (float)g_app->window_height - ImGui::GetCursorPosY() - 70.0f;
+    height = std::fmaxf(100.0f, height);
+
+    if (ImGui::BeginChild("WarningView", ImVec2{ (float)g_app->window_width - 28, height }, true)) {
+
+    }
+
+    ImGui::EndChild();
+}
+
+static void DrawCompilerOutputViews()
+{
+    ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
+    if (ImGui::BeginTabBar("compiler output", tab_bar_flags)) {
+
+        if (ImGui::BeginTabItem("Console", nullptr)) {
+            DrawConsoleView();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("QBSP", nullptr)) {
+            DrawWarningsView();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("LIGHT", nullptr)) {
+            DrawWarningsView();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("VIS", nullptr)) {
+            DrawWarningsView();
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+}
+
 // tool preset actions
 static constexpr int TOOL_PRESET_DUPLICATE = 1;
 static constexpr int TOOL_PRESET_REMOVE = 2;
@@ -1404,14 +1507,16 @@ static int DrawPresetListItem(config::ToolPreset& preset, int index)
 
         ImGuiInputTextFlags flags = preset.builtin ? ImGuiInputTextFlags_ReadOnly : 0;
 
-        DrawTextInput("Name: ", preset.name, 24, flags, nullptr, false);
+        float offs = 42;
+        DrawTextInput("Name: ", preset.name, 24 + offs, flags, nullptr, false);
 
-        //DrawPresetToolParams(preset, "QBSP", CONFIG_FLAG_QBSP_ENABLED, preset.qbsp_args, 13, flags);
-        //DrawPresetToolParams(preset, "LIGHT", CONFIG_FLAG_LIGHT_ENABLED, preset.light_args, 5, flags);
-        //DrawPresetToolParams(preset, "VIS", CONFIG_FLAG_VIS_ENABLED, preset.vis_args, 20, flags);
-        //DrawPresetToolParams(preset, "QUAKE", 0, preset.quake_args, 8);
+        g_inpresetwindow = true;
+        DrawCompileSteps(preset.steps, flags, HandleCompileStepAction);
+        g_inpresetwindow = false;
 
-        ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10, 0); ImGui::SameLine();
+        DrawSpacing(0, 1);
+
+        ImGui::Text("Action: "); ImGui::SameLine();  DrawSpacing(10 + offs, 0); ImGui::SameLine();
         if (ImGui::BeginCombo("##actions", "Actions...")) {
             if (ImGui::Selectable("Copy")) {
                 result = TOOL_PRESET_DUPLICATE;
@@ -1459,10 +1564,7 @@ static void DrawPresetWindow()
 
                 config::ToolPreset preset = {};
                 preset.name = "New Preset";
-                //preset.flags = g_app->current_config.tool_flags;
-                //preset.qbsp_args = g_app->current_config.qbsp_args;
-                //preset.light_args = g_app->current_config.light_args;
-                //preset.vis_args = g_app->current_config.vis_args;
+                preset.steps = config::GetDefaultCompileSteps();
                 g_app->user_config.tool_presets.push_back(preset);
 
                 g_app->save_current_tools_options_as_preset = false;
@@ -1648,12 +1750,9 @@ static void DrawMainContent()
         DrawSpacing(0, 5);
 
         float offs = -15.0f;
-        if (DrawFileInput("Tools Dir:", config::PATH_TOOLS_DIR, 20 + offs)) g_app->modified = true;
-        if (DrawFileInput("Work Dir:", config::PATH_WORK_DIR, 27 + offs)) g_app->modified = true;
-        if (DrawFileInput("Output Dir:", config::PATH_OUTPUT_DIR, 13.5f + offs)) g_app->modified = true;
-        if (DrawFileInput("Editor Exe:", config::PATH_EDITOR_EXE, 13.5f + offs)) g_app->modified = true;
-        if (DrawFileInput("Engine Exe:", config::PATH_ENGINE_EXE, 13.5f + offs)) g_app->modified = true;
+        
         if (DrawFileInput("Map Source:", config::PATH_MAP_SOURCE, 13.5f + offs)) g_app->modified = true;
+        if (DrawFileInput("Output Dir:", config::PATH_OUTPUT_DIR, 13.5f + offs)) g_app->modified = true;
 
         ImGui::TreePop();
     }
@@ -1669,43 +1768,58 @@ static void DrawMainContent()
 
         DrawSpacing(0, 5);
 
+        if (DrawFileInput("Tools Dir:", config::PATH_TOOLS_DIR, 20 - 15)) g_app->modified = true;
+
         DrawPresetCombo();
 
         float offs = 9.0f;
-        /*
-        if (DrawToolParams("QBSP", CONFIG_FLAG_QBSP_ENABLED, g_app->current_config.qbsp_args, 45 + offs)) {
-            g_app->modified = true;
-            g_app->modified_flags = true;
-        }
-        if (DrawToolParams("LIGHT", CONFIG_FLAG_LIGHT_ENABLED, g_app->current_config.light_args, 37 + offs)) {
-            g_app->modified = true;
-            g_app->modified_flags = true;
-        }
-        if (DrawToolParams("VIS", CONFIG_FLAG_VIS_ENABLED, g_app->current_config.vis_args, 52 + offs)) {
-            g_app->modified = true;
-            g_app->modified_flags = true;
-        }
-        if (DrawToolParams("QUAKE", 0, g_app->current_config.quake_args, 41 + offs)) {
-            g_app->modified = true;
-        }*/
 
-        static std::vector<std::pair<DrawCompileStepAction, int>> actions;
-        actions.clear();
-        for (size_t i = 0; i < g_app->current_config.steps.size(); i++) {
-            DrawCompileStepAction action;
-            bool changed;
-            std::tie(action, changed) = DrawCompileStep(g_app->current_config.steps[i], i);
-            actions.emplace_back(action, i);
-        }
-        HandleCompileStepActions(actions);
+        DrawCompileSteps(g_app->current_config.steps, 0, HandleCompileStepAction);
 
-        if (ImGui::Button(ICOFONT_PLUS)) {
-
-        }
         ImGui::TreePop();
     }
     else {
         g_app->user_config.ui_section_tools_open = false;
+    }
+
+    DrawSeparator(5);
+
+    ImGui::SetNextItemOpen(g_app->user_config.ui_section_engine_open, ImGuiCond_Once);
+    if (ImGui::TreeNode("Engine options")) {
+        g_app->user_config.ui_section_engine_open = true;
+
+        DrawSpacing(0, 5);
+
+        if (DrawFileInput("Engine Exe:", config::PATH_ENGINE_EXE, 13.5f - 15.0f)) {
+            g_app->modified = true;
+        }
+
+        float offs = 9.0f;
+        if (DrawEngineParams("Engine Args:", g_app->current_config.quake_args, 21.0f)) {
+            g_app->modified = true;
+        }
+
+        DrawSpacing(0, 1);
+
+        if (ImGui::Checkbox("Quake console output enabled", &g_app->current_config.quake_output_enabled)) {
+            g_app->modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker("Option to display the output from the Quake engine while it's running.");
+
+        if (ImGui::Checkbox("Use map mod as -game argument (TB only)", &g_app->current_config.use_map_mod)) {
+            g_app->modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker(
+            "Use the '_tb_mod' worldspawn field as the '-game' argument for the Quake engine. "
+            "In case multiple mods were used, the first one is picked. This option only works if TrenchBroom was used as the editor."
+        );
+
+        ImGui::TreePop();
+    }
+    else {
+        g_app->user_config.ui_section_engine_open = false;
     }
 
     DrawSeparator(5);
@@ -1715,6 +1829,12 @@ static void DrawMainContent()
         g_app->user_config.ui_section_other_open = true;
 
         DrawSpacing(0, 5);
+
+        if (DrawFileInput("Work Dir:", config::PATH_WORK_DIR, 27 - 15)) g_app->modified = true;
+        if (DrawFileInput("Editor Exe:", config::PATH_EDITOR_EXE, 13.5f - 15)) g_app->modified = true;
+
+        DrawSpacing(0, 1);
+
         if (ImGui::Checkbox("Watch map file for changes and pre-compile", &g_app->current_config.watch_map_file)) {
             g_app->modified = true;
             g_app->map_file_watcher->SetEnabled(g_app->current_config.watch_map_file);
@@ -1737,21 +1857,6 @@ static void DrawMainContent()
             );
             DrawSpacing(0, 5.0f);
         }
-
-        if (ImGui::Checkbox("Use map mod as -game argument (TB only)", &g_app->current_config.use_map_mod)) {
-            g_app->modified = true;
-        }
-        ImGui::SameLine();
-        DrawHelpMarker(
-            "Use the '_tb_mod' worldspawn field as the '-game' argument for the Quake engine. "
-            "In case multiple mods were used, the first one is picked. This option only works if TrenchBroom was used as the editor."
-        );
-
-        if (ImGui::Checkbox("Quake console output enabled", &g_app->current_config.quake_output_enabled)) {
-            g_app->modified = true;
-        }
-        ImGui::SameLine();
-        DrawHelpMarker("Option to display the output from the Quake engine while it's running.");
 
         if (ImGui::Checkbox("Compile map on launch", &g_app->current_config.compile_map_on_launch)) {
             g_app->modified = true;
@@ -1782,7 +1887,7 @@ static void DrawMainContent()
 
     DrawSpacing(0, 10);
 
-    DrawConsoleView();
+    DrawCompilerOutputViews();
 
     DrawCredits();
 

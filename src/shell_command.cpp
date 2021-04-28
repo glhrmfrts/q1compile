@@ -6,6 +6,7 @@ namespace shell_command {
 
 ShellCommand::ShellCommand(const std::string& cmd, const std::string& pwd)
 {
+    handle = NULL;
     handle = _popen(cmd.c_str(), "r");
 }
 
@@ -13,6 +14,8 @@ ShellCommand::~ShellCommand()
 {
     _pclose(handle);
 }
+
+bool ShellCommand::Good() const { return handle != NULL; }
 
 bool ShellCommand::ReadChar(char& c)
 {

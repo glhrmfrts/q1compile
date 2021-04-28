@@ -155,7 +155,7 @@ static CompileStepType ParseCompileStepType(const std::string& tstr)
     return COMPILE_INVALID;
 }
 
-static std::vector<CompileStep> GetDefaultCompileSteps()
+std::vector<CompileStep> GetDefaultCompileSteps()
 {
     std::vector<CompileStep> steps;
     steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
