@@ -77,6 +77,7 @@ struct UserConfig
     std::string                 loaded_config;
     std::string                 last_import_preset_location;
     std::string                 last_export_preset_location;
+    std::string                 last_tools_dir;
     std::deque<std::string>     recent_configs;
     std::vector<ToolPreset>     tool_presets;
     bool                        ui_section_info_open;
