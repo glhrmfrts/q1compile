@@ -168,6 +168,8 @@ static std::vector<const char*> g_config_paths_help = {
     "The .map file to compile"
 };
 
+static bool g_tabforceselected;
+
 static void HandleFileBrowserCallback();
 
 template<class T>
@@ -286,6 +288,12 @@ static void SetCurrentConfig(int idx)
     g_app->current_config = g_app->open_configs[idx].get();
 }
 
+static void SetCurrentConfigAndSelect(int idx)
+{
+    SetCurrentConfig(idx);
+    g_tabforceselected = true;
+}
+
 static std::string GetDefaultWorkDir()
 {
     std::string work_dir = path::Join(path::qc_GetTempDir(), "q1compile");
@@ -298,6 +306,18 @@ static std::string GetDefaultWorkDir()
     return work_dir;
 }
 
+static void SelfWriteUserConfig()
+{
+    std::set<std::string> loadedconfs;
+    for (auto& cfg : g_app->open_configs) {
+        if (cfg->path.empty()) continue;
+        
+        loadedconfs.insert(cfg->path);
+    }
+    g_app->user_config.loaded_configs = std::move(loadedconfs);
+    config::WriteUserConfig(g_app->user_config);
+}
+
 static void AddNewConfig()
 {
     g_app->open_configs.push_back(std::make_unique<OpenConfigState>());
@@ -306,8 +326,13 @@ static void AddNewConfig()
     state.map_file = nullptr;
     state.map_file_watcher = std::make_unique<file_watcher::FileWatcher>("", WATCH_MAP_FILE_INTERVAL);
     state.map_has_leak = false;
+
+    config::SetConfigDefaults(state.config);
     state.config.config_name = "New Config";
     state.config.config_paths[config::PATH_WORK_DIR] = GetDefaultWorkDir();
+    state.config.config_paths[config::PATH_TOOLS_DIR] = g_app->user_config.last_tools_dir;
+
+    SetCurrentConfigAndSelect(g_app->open_configs.size() - 1);
 }
 
 static void SaveConfig(const std::string& path)
@@ -323,7 +348,7 @@ static void SaveConfig(const std::string& path)
     config::WriteConfig(g_app->current_config->config, path);
     g_app->current_config->path = path;
     g_app->current_config->last_loaded_config_name = g_app->current_config->config.config_name;
-    config::WriteUserConfig(g_app->user_config);
+    WriteUserConfig(g_app->user_config);
 
     g_app->current_config->modified = false;
     g_app->console_auto_scroll = true;
@@ -371,7 +396,7 @@ static bool LoadConfig(const std::string& path)
         state.map_file_watcher->SetPath(mapsrc);
     }
 
-    SetCurrentConfig(g_app->open_configs.size() - 1);
+    SetCurrentConfigAndSelect(g_app->open_configs.size() - 1);
 
     state.selected_preset_index = FindPresetIndex(state.config.selected_preset) + 1;
     if (state.selected_preset_index > 0) {
@@ -381,7 +406,7 @@ static bool LoadConfig(const std::string& path)
     }
 
     g_app->user_config.loaded_configs.insert(path);
-    config::WriteUserConfig(g_app->user_config);
+    SelfWriteUserConfig();
 
     HandleMapSourceChanged();
 
@@ -612,19 +637,19 @@ static void HandleSaveConfig()
 static void HandleCompileAndRun()
 {
     // run quake and ignore diff
-    compile::StartCompileJob(g_app->current_config, true, true);
+    compile::StartCompileJob(g_app->current_config, compile::CompileFlags(compile::CF_RUN_QUAKE | compile::CF_IGNORE_DIFF));
 }
 
 static void HandleCompileOnly()
 {
     // don't run quake and ignore diff
-    compile::StartCompileJob(g_app->current_config, false, true);
+    compile::StartCompileJob(g_app->current_config, compile::CF_IGNORE_DIFF);
 }
 
 static void HandleAutoCompile(OpenConfigState* state)
 {
     // don't run quake and don't ignore diff
-    compile::StartCompileJob(state, false, false);
+    compile::StartCompileJob(state, compile::CF_NONE);
 }
 
 static void HandleStopCompiling()
@@ -638,10 +663,10 @@ static void HandleRun()
 {
     if (!g_app->last_job_ran_quake) {
         // Instead of stopping the current compilation, just add the job to the queue
-        compile::EnqueueCompileJob(g_app->current_config, true, true, true);
+        compile::EnqueueCompileJob(g_app->current_config, compile::CompileFlags(compile::CF_RUN_QUAKE | compile::CF_IGNORE_DIFF | compile::CF_NO_COMPILE));
     }
     else {
-        compile::StartCompileJob(g_app->current_config, true, true, true);
+        compile::StartCompileJob(g_app->current_config, compile::CompileFlags(compile::CF_RUN_QUAKE | compile::CF_IGNORE_DIFF | compile::CF_NO_COMPILE));
     }
 }
 
@@ -758,7 +783,7 @@ static void HandleFileBrowserCallback()
 
             g_app->user_config.last_import_preset_location = path::Directory(path);
             g_app->user_config.tool_presets.push_back(preset);
-            config::WriteUserConfig(g_app->user_config);
+            SelfWriteUserConfig();
 
             g_app->show_preset_window = true;
 
@@ -778,7 +803,7 @@ static void HandleFileBrowserCallback()
         config::WriteToolPreset(exp_preset, path);
         
         g_app->user_config.last_export_preset_location = path::Directory(path);
-        config::WriteUserConfig(g_app->user_config);
+        SelfWriteUserConfig();
 
         g_app->show_preset_window = true;
 
@@ -964,6 +989,21 @@ static void HandleCompileStepAction(std::vector<config::CompileStep>& steps, Dra
             steps.push_back(config::CompileStep{ config::COMPILE_CUSTOM, "", "", true, 0 });
             break;
         }
+    }
+}
+
+static void HandleCloseConfig(int idx)
+{
+    auto& cfg = *g_app->open_configs[idx];
+    if (cfg.modified) {
+        ShowUnsavedChangesWindow([idx](bool saved) {
+            HandleCloseConfig(idx);
+        });
+    }
+    else {
+        // TODO: check if compiling
+        g_app->open_configs.erase(g_app->open_configs.begin() + idx);
+        SelfWriteUserConfig();
     }
 }
 
@@ -1678,7 +1718,7 @@ static void DrawPresetWindow()
 
         // Just closed
         if (!g_app->show_preset_window) {
-            config::WriteUserConfig(g_app->user_config);
+            SelfWriteUserConfig();
         }
     }
 
@@ -1940,8 +1980,6 @@ static void DrawMainContent()
     DrawUnsavedChangesWindow();
 }
 
-static bool g_tabforceselected;
-
 static void DrawMainWindow()
 {
     ImGuiWindowFlags flags = (
@@ -1959,7 +1997,9 @@ static void DrawMainWindow()
     if (ImGui::Begin("##main", nullptr, flags)) {
         if (ImGui::BeginChild("##content", ImVec2{ (float)g_app->window_width - 28, (float)g_app->window_height - 28 } )) {
 
-            ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_TabListPopupButton | ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
+            ImGuiTabBarFlags tab_bar_flags = (
+                ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_TabListPopupButton
+                | ImGuiTabBarFlags_NoCloseWithMiddleMouseButton | ImGuiTabBarFlags_Reorderable  );
             if (ImGui::BeginTabBar("configs", tab_bar_flags)) {
 
                 int configtoclose = -1;
@@ -1971,11 +2011,6 @@ static void DrawMainWindow()
 
                     ImGuiTabItemFlags itemflags = (state.modified) ? ImGuiTabItemFlags_UnsavedDocument : ImGuiTabItemFlags_None;
                     itemflags |= ImGuiTabItemFlags_NoPushId;
-
-                    if (g_tabforceselected && (i == g_app->current_config_index)) {
-                        itemflags |= ImGuiTabItemFlags_SetSelected;
-                        g_tabforceselected = false;
-                    }
 
                     if (ImGui::BeginTabItem(state.config.config_name.c_str(), &opened, itemflags))
                     {
@@ -1990,19 +2025,13 @@ static void DrawMainWindow()
 
                     ImGui::PopID();
                 }
-            }
 
-            ImGui::PushID("new");
-            if (ImGui::BeginTabItem(ICOFONT_PLUS, nullptr, ImGuiTabItemFlags_NoTooltip))
-            {
-                AddNewConfig();
-                SetCurrentConfig(g_app->open_configs.size() - 1);
-                g_tabforceselected = true;
-                ImGui::EndTabItem();
-            }
-            ImGui::PopID();
+                if (configtoclose != -1) {
+                    HandleCloseConfig(configtoclose);
+                }
 
-            ImGui::EndTabBar();
+                ImGui::EndTabBar();
+            }
         }
         ImGui::EndChild();
     }
@@ -2175,6 +2204,6 @@ bool qc_render()
 
 void qc_deinit()
 {
-    config::WriteUserConfig(g_app->user_config);
+    SelfWriteUserConfig();
     delete g_app;
 }

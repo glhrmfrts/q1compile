@@ -115,4 +115,6 @@ CompileStep* FindCompileStep(std::vector<CompileStep>& steps, CompileStepType t)
 
 std::vector<CompileStep> GetDefaultCompileSteps();
 
+void SetConfigDefaults(Config& config);
+
 }

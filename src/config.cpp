@@ -417,6 +417,13 @@ void WriteConfig(const Config& config, const std::string& path)
     }
 }
 
+void SetConfigDefaults(Config& config)
+{
+    config.quake_output_enabled = true;
+    config.ui_section_info_open = true;
+    config.ui_section_paths_open = true;
+}
+
 Config ReadConfig(const std::string& path)
 {
     if (!path::Exists(path))
@@ -425,7 +432,7 @@ Config ReadConfig(const std::string& path)
     Config config = {};
 
     // set defaults
-    config.quake_output_enabled = true;
+    SetConfigDefaults(config);
 
     ParseConfigFile(path, [&config](std::string name, ConfigLineParser& p) {
         SetConfigVar(config, name, p);

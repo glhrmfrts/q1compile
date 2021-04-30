@@ -33,9 +33,7 @@ static std::string ReplaceCompileVars(const std::string& args, const config::Con
 struct CompileJob
 {
     OpenConfigState* state;
-    bool run_quake;
-    bool ignore_diff;
-    bool nocompile; // TODO: implement
+    CompileFlags flags;
 
     bool RunTool(const std::string& exe, const std::string& args)
     {
@@ -56,6 +54,9 @@ struct CompileJob
 
     void operator()()
     {
+        bool run_quake = flags & CF_RUN_QUAKE;
+        bool ignore_diff = flags & CF_IGNORE_DIFF;
+
         g_app->compile_status = "Preparing to compile...";
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -149,7 +150,7 @@ struct CompileJob
             g_app->compile_output.append("Could not read map file!\n");
         }
         else {
-            if (prev_map_file && state->config.watch_map_file && state->config.auto_apply_onlyents && !this->ignore_diff) {
+            if (prev_map_file && state->config.watch_map_file && state->config.auto_apply_onlyents && !ignore_diff) {
                 g_app->compile_output.append("Doing map diff...\n");
 
                 config::ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *state->map_file);
@@ -408,7 +409,7 @@ static std::string ReplaceCompileVars(const std::string& args, const config::Con
     return args;
 }
 
-void StartCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff, bool nocompile)
+void StartCompileJob(OpenConfigState* cfg, CompileFlags flags)
 {
     g_app->console_auto_scroll = true;
     g_app->console_lock_scroll = true;
@@ -418,8 +419,8 @@ void StartCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff, boo
         g_app->stop_compiling = true;
     }
 
-    g_app->last_job_ran_quake = run_quake;
-    EnqueueCompileJob(cfg, run_quake, ignore_diff, nocompile);
+    g_app->last_job_ran_quake = flags & CF_RUN_QUAKE;
+    EnqueueCompileJob(cfg, flags);
 }
 
 void StartHelpJob(config::CompileStepType cstype)
@@ -427,9 +428,9 @@ void StartHelpJob(config::CompileStepType cstype)
     g_app->compile_queue->AddWork(0, HelpJob{ g_app->current_config, cstype });
 }
 
-void EnqueueCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff, bool nocompile)
+void EnqueueCompileJob(OpenConfigState* cfg, CompileFlags flags)
 {
-    g_app->compile_queue->AddWork(0, CompileJob{ cfg, run_quake, ignore_diff, nocompile });
+    g_app->compile_queue->AddWork(0, CompileJob{ cfg, flags });
 }
 
 }
