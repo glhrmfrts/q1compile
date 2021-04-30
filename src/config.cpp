@@ -250,6 +250,21 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
     }
+    else if (name == "ui_info_open") {
+        p.ParseBool(config.ui_section_info_open);
+    }
+    else if (name == "ui_engine_open") {
+        p.ParseBool(config.ui_section_engine_open);
+    }
+    else if (name == "ui_other_open") {
+        p.ParseBool(config.ui_section_other_open);
+    }
+    else if (name == "ui_tools_open") {
+        p.ParseBool(config.ui_section_tools_open);
+    }
+    else if (name == "ui_paths_open") {
+        p.ParseBool(config.ui_section_paths_open);
+    }
     else if (name.find("compile_step") != std::string::npos) {
         SetCompileStepVar(name, p, config.steps);
     }
@@ -314,25 +329,15 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
         p.ParseString(config.version);
     }
     else if (name == "loaded_config") {
-        p.ParseString(config.loaded_config);
+        std::string loaded_config;
+        p.ParseString(loaded_config);
+        config.loaded_configs.insert(loaded_config);
     }
     else if (name == "last_import_preset_location") {
         p.ParseString(config.last_import_preset_location);
     }
     else if (name == "last_export_preset_location") {
         p.ParseString(config.last_export_preset_location);
-    }
-    else if (name == "ui_section_info_open") {
-        p.ParseBool(config.ui_section_info_open);
-    }
-    else if (name == "ui_section_paths_open") {
-        p.ParseBool(config.ui_section_paths_open);
-    }
-    else if (name == "ui_section_tools_open") {
-        p.ParseBool(config.ui_section_tools_open);
-    }
-    else if (name == "ui_section_other_open") {
-        p.ParseBool(config.ui_section_other_open);
     }
     else if (name == "recent_config") {
         std::string value;
@@ -400,6 +405,11 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "compile_map_on_launch", config.compile_map_on_launch);
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
     WriteVar(fh, "selected_preset", config.selected_preset);
+    WriteVar(fh, "ui_engine_open", config.ui_section_engine_open);
+    WriteVar(fh, "ui_info_open", config.ui_section_info_open);
+    WriteVar(fh, "ui_other_open", config.ui_section_other_open);
+    WriteVar(fh, "ui_paths_open", config.ui_section_paths_open);
+    WriteVar(fh, "ui_tools_open", config.ui_section_tools_open);
     
     // write compile steps
     for (const auto& step : config.steps) {
@@ -430,13 +440,13 @@ void WriteUserConfig(const UserConfig& config)
 
     // write user config vars
     WriteVar(fh, "version", APP_VERSION);
-    WriteVar(fh, "loaded_config", config.loaded_config);
     WriteVar(fh, "last_import_preset_location", config.last_import_preset_location);
     WriteVar(fh, "last_export_preset_location", config.last_export_preset_location);
-    WriteVar(fh, "ui_section_info_open", config.ui_section_info_open);
-    WriteVar(fh, "ui_section_paths_open", config.ui_section_paths_open);
-    WriteVar(fh, "ui_section_tools_open", config.ui_section_tools_open);
-    WriteVar(fh, "ui_section_other_open", config.ui_section_other_open);
+
+    // write loaded configs
+    for (const auto& lc : config.loaded_configs) {
+        WriteVar(fh, "loaded_config", lc);
+    }
 
     // write recent configs
     for (const auto& rc : config.recent_configs) {
@@ -463,12 +473,6 @@ UserConfig ReadUserConfig()
         return {};
 
     UserConfig config = {};
-
-    // set defaults
-    config.ui_section_info_open = true;
-    config.ui_section_paths_open = true;
-    config.ui_section_tools_open = true;
-    config.ui_section_other_open = true;
 
     ParseConfigFile(path, [&config](std::string name, ConfigLineParser& p) {
         SetUserConfigVar(config, name, p);

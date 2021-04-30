@@ -5,7 +5,7 @@
 namespace file_watcher {
 
 FileWatcher::FileWatcher(const std::string& path, float interval)
-    : _path{ path }, _interval{ interval }, _enabled{ true }
+    : _path{ path }, _interval{ interval }, _enabled{ !path.empty() }, _timer{ interval }
 {
     _prev_modified_time = path::GetFileModifiedTime(_path);
 }
@@ -18,7 +18,7 @@ void FileWatcher::SetPath(const std::string& path)
 
 void FileWatcher::SetEnabled(bool enabled)
 {
-    _enabled = enabled;
+    _enabled = enabled && !_path.empty();
     if (enabled) _prev_modified_time = path::GetFileModifiedTime(_path);
 }
 

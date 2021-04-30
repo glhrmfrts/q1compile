@@ -3,10 +3,7 @@
 #include <string>
 #include <array>
 #include <deque>
-
-//#define CONFIG_FLAG_QBSP_ENABLED    0x1
-//#define CONFIG_FLAG_LIGHT_ENABLED   0x2
-//#define CONFIG_FLAG_VIS_ENABLED     0x4
+#include <set>
 
 namespace config {
 
@@ -57,6 +54,12 @@ struct Config
     bool compile_map_on_launch;
     bool open_editor_on_launch;
 
+    bool                        ui_section_info_open;
+    bool                        ui_section_paths_open;
+    bool                        ui_section_tools_open;
+    bool                        ui_section_engine_open;
+    bool                        ui_section_other_open;
+
     // Runtime only
     int selected_preset_index;
 };
@@ -74,17 +77,13 @@ struct ToolPreset
 struct UserConfig
 {
     std::string                 version;
-    std::string                 loaded_config;
+    std::set<std::string>       loaded_configs;
     std::string                 last_import_preset_location;
     std::string                 last_export_preset_location;
     std::string                 last_tools_dir;
     std::deque<std::string>     recent_configs;
     std::vector<ToolPreset>     tool_presets;
-    bool                        ui_section_info_open;
-    bool                        ui_section_paths_open;
-    bool                        ui_section_tools_open;
-    bool                        ui_section_engine_open;
-    bool                        ui_section_other_open;
+    std::string                 selected_config;
 };
 
 static const char* g_config_path_names[] = {

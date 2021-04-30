@@ -2,12 +2,14 @@
 
 #include "config.h"
 
+struct OpenConfigState;
+
 namespace compile {
 
 void StartHelpJob(config::CompileStepType);
 
-void StartCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff = false);
+void StartCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff = false, bool nocompile = false);
 
-void EnqueueCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff = false);
+void EnqueueCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff = false, bool nocompile = false);
 
 }

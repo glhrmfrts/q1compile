@@ -32,13 +32,14 @@ static std::string ReplaceCompileVars(const std::string& args, const config::Con
 
 struct CompileJob
 {
-    config::Config config;
+    OpenConfigState* state;
     bool run_quake;
     bool ignore_diff;
+    bool nocompile; // TODO: implement
 
     bool RunTool(const std::string& exe, const std::string& args)
     {
-        std::string cmd = path::Join(path::FromNative(config.config_paths[config::PATH_TOOLS_DIR]), exe);
+        std::string cmd = path::Join(path::FromNative(state->config.config_paths[config::PATH_TOOLS_DIR]), exe);
         if (!path::Exists(cmd)) {
             console::PrintError(exe.c_str());
             console::PrintError(" not found, is the tools directory right?");
@@ -61,8 +62,8 @@ struct CompileJob
 
         auto time_begin = std::chrono::system_clock::now();
 
-        std::string source_map = path::FromNative(config.config_paths[config::PATH_MAP_SOURCE]);
-        std::string work_map = path::Join(path::FromNative(config.config_paths[config::PATH_WORK_DIR]), path::Filename(source_map));
+        std::string source_map = path::FromNative(state->config.config_paths[config::PATH_MAP_SOURCE]);
+        std::string work_map = path::Join(path::FromNative(state->config.config_paths[config::PATH_WORK_DIR]), path::Filename(source_map));
         if (source_map == work_map) {
             g_app->compile_status = "Stopped.";
             console::PrintError("ERROR: 'Work Dir' is the same as the map source directory, there's a risk of messing with your files, compilation will not proceed!\n");
@@ -78,8 +79,8 @@ struct CompileJob
         common::StrReplace(work_bsp, ".map", ".bsp");
         common::StrReplace(work_lit, ".map", ".lit");
 
-        std::string out_bsp = path::Join(path::FromNative(config.config_paths[config::PATH_OUTPUT_DIR]), path::Filename(work_bsp));
-        std::string out_lit = path::Join(path::FromNative(config.config_paths[config::PATH_OUTPUT_DIR]), path::Filename(work_lit));
+        std::string out_bsp = path::Join(path::FromNative(state->config.config_paths[config::PATH_OUTPUT_DIR]), path::Filename(work_bsp));
+        std::string out_lit = path::Join(path::FromNative(state->config.config_paths[config::PATH_OUTPUT_DIR]), path::Filename(work_lit));
         if (work_bsp == out_bsp) {
             g_app->compile_status = "Stopped.";
             console::PrintError("ERROR: 'Work Dir' is the same as the 'Output Dir', there's a risk of messing with your files, compilation will not proceed!\n");
@@ -88,13 +89,14 @@ struct CompileJob
             return;
         }
 
-        auto prev_map_file = std::unique_ptr<map_file::MapFile>(g_app->map_file.release());
-        g_app->map_file = std::make_unique<map_file::MapFile>(source_map);
-        
-        g_app->map_has_leak = false;
+        auto prev_map_file = std::unique_ptr<map_file::MapFile>(state->map_file.release());
+        state->map_file = std::make_unique<map_file::MapFile>(source_map);
+        state->map_has_leak = false;
+
         g_app->compiling = true;
         g_app->compile_status = "Copying source file to work dir...";
-        common::ScopeGuard end{ [work_bsp, source_map]() {
+
+        common::ScopeGuard end{ [this, work_bsp, source_map]() {
             g_app->compiling = false;
             g_app->stop_compiling = false;
             g_app->console_lock_scroll = false;
@@ -110,7 +112,7 @@ struct CompileJob
                     if (path::Copy(work_pts, source_pts)) {
                         ReportCopy(work_pts, source_pts);
                         path::Remove(work_pts);
-                        g_app->map_has_leak = true;
+                        state->map_has_leak = true;
                     }
                 }
             }
@@ -143,18 +145,18 @@ struct CompileJob
         };
         ReportCompileParams("Starting to compile:");
 
-        if (!g_app->map_file->Good()) {
+        if (!state->map_file->Good()) {
             g_app->compile_output.append("Could not read map file!\n");
         }
         else {
-            if (prev_map_file && g_app->current_config.watch_map_file && g_app->current_config.auto_apply_onlyents && !this->ignore_diff) {
+            if (prev_map_file && state->config.watch_map_file && state->config.auto_apply_onlyents && !this->ignore_diff) {
                 g_app->compile_output.append("Doing map diff...\n");
 
-                config::ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *g_app->map_file);
+                config::ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *state->map_file);
 
                 std::vector<config::CompileStep> new_steps;
                 for (const auto& step : diff_pre.steps) {
-                    auto orig_step = config::FindCompileStep(config.steps, step.type);
+                    auto orig_step = config::FindCompileStep(state->config.steps, step.type);
                     if (orig_step) {
                         new_steps.push_back(config::CompileStep{
                             step.type,
@@ -168,18 +170,18 @@ struct CompileJob
                         new_steps.push_back(step);
                     }
                 }
-                for (size_t i = 0; i < config.steps.size(); i++) {
-                    const auto& step = config.steps[i];
+                for (size_t i = 0; i < state->config.steps.size(); i++) {
+                    const auto& step = state->config.steps[i];
                     if (step.type == config::COMPILE_CUSTOM) {
                         new_steps.insert(new_steps.begin() + i, step);
                     }
                 }
-                config.steps = std::move(new_steps);
+                state->config.steps = std::move(new_steps);
 
                 ReportCompileParams("Map diff results:");
 
-                auto qbsp_step = config::FindCompileStep(config.steps, config::COMPILE_QBSP);
-                auto light_step = config::FindCompileStep(config.steps, config::COMPILE_LIGHT);
+                auto qbsp_step = config::FindCompileStep(state->config.steps, config::COMPILE_QBSP);
+                auto light_step = config::FindCompileStep(state->config.steps, config::COMPILE_LIGHT);
 
                 if (qbsp_step) g_app->compile_output.append("Diff QBSP args: " + qbsp_step->args + "\n");
                 if (light_step) g_app->compile_output.append("Diff LIGHT args: " + light_step->args + "\n");
@@ -196,12 +198,12 @@ struct CompileJob
         if (g_app->stop_compiling) return;
 
         // Execute compile steps
-        for (const auto& step : config.steps) {
+        for (const auto& step : state->config.steps) {
             if (g_app->stop_compiling) return;
             if (!step.enabled) continue;
 
             if (step.type == config::COMPILE_CUSTOM) {
-                auto cmd = ReplaceCompileVars(step.cmd, config);
+                auto cmd = ReplaceCompileVars(step.cmd, state->config);
                 g_app->compile_output.append("Starting: " + cmd + "\n");
                 g_app->compile_status = cmd;
                 ExecuteCompileCommand(cmd, "");
@@ -209,7 +211,7 @@ struct CompileJob
             }
             else {
                 // Define step args
-                std::string args = ReplaceCompileVars(step.args, config);
+                std::string args = ReplaceCompileVars(step.args, state->config);
                 switch (step.type) {
                 case config::COMPILE_QBSP:
                     args += " " + work_map;
@@ -260,11 +262,11 @@ struct CompileJob
         if (run_quake) {
             g_app->compile_output.append("------------------------------------------------\n");
 
-            std::string args = config.quake_args;
+            std::string args = state->config.quake_args;
 
-            if (g_app->current_config.use_map_mod && g_app->map_file.get() && (args.find("-game") == std::string::npos)) {
+            if (state->config.use_map_mod && state->map_file.get() && (args.find("-game") == std::string::npos)) {
                 args.append(" -game ");
-                args.append(g_app->map_file->GetTBMod());
+                args.append(state->map_file->GetTBMod());
             }
 
             if (args.find("+map") == std::string::npos) {
@@ -280,19 +282,19 @@ struct CompileJob
             g_app->compile_output.append(g_app->compile_status);
             g_app->compile_output.append("\n");
 
-            std::string cmd = path::FromNative(config.config_paths[config::PATH_ENGINE_EXE]);
+            std::string cmd = path::FromNative(state->config.config_paths[config::PATH_ENGINE_EXE]);
             std::string pwd = path::Directory(cmd);
             cmd.append(" ");
             cmd.append(args);
 
-            ExecuteCompileProcess(cmd, pwd, !config.quake_output_enabled);
+            ExecuteCompileProcess(cmd, pwd, !state->config.quake_output_enabled);
         }
     }
 };
 
 struct HelpJob
 {
-    config::Config cfg;
+    OpenConfigState* state;
     config::CompileStepType cstype;
 
     void operator()()
@@ -302,13 +304,13 @@ struct HelpJob
         case config::COMPILE_QBSP:
         case config::COMPILE_LIGHT:
         case config::COMPILE_VIS:
-            cmd = config::FindCompileStep(cfg.steps, cstype)->cmd;
+            cmd = config::FindCompileStep(state->config.steps, cstype)->cmd;
             break;
         default:
             return;
         }
 
-        std::string proc = path::Join(path::FromNative(cfg.config_paths[config::PATH_TOOLS_DIR]), cmd);
+        std::string proc = path::Join(path::FromNative(state->config.config_paths[config::PATH_TOOLS_DIR]), cmd);
         if (!path::Exists(proc)) {
             console::PrintError(cmd.c_str());
             console::PrintError(" not found, is the tools directory right?\n");
@@ -406,7 +408,7 @@ static std::string ReplaceCompileVars(const std::string& args, const config::Con
     return args;
 }
 
-void StartCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff)
+void StartCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff, bool nocompile)
 {
     g_app->console_auto_scroll = true;
     g_app->console_lock_scroll = true;
@@ -417,7 +419,7 @@ void StartCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff
     }
 
     g_app->last_job_ran_quake = run_quake;
-    EnqueueCompileJob(cfg, run_quake, ignore_diff);
+    EnqueueCompileJob(cfg, run_quake, ignore_diff, nocompile);
 }
 
 void StartHelpJob(config::CompileStepType cstype)
@@ -425,9 +427,9 @@ void StartHelpJob(config::CompileStepType cstype)
     g_app->compile_queue->AddWork(0, HelpJob{ g_app->current_config, cstype });
 }
 
-void EnqueueCompileJob(const config::Config& cfg, bool run_quake, bool ignore_diff)
+void EnqueueCompileJob(OpenConfigState* cfg, bool run_quake, bool ignore_diff, bool nocompile)
 {
-    g_app->compile_queue->AddWork(0, CompileJob{ cfg, run_quake, ignore_diff });
+    g_app->compile_queue->AddWork(0, CompileJob{ cfg, run_quake, ignore_diff, nocompile });
 }
 
 }

@@ -29,8 +29,26 @@ enum FileBrowserCallback {
     FB_CONFIG_STR,
 };
 
+struct OpenConfigState {
+    config::Config config;
+
+    bool modified = false;
+    bool modified_steps = false;
+
+    std::string path;
+    std::string last_loaded_config_name;
+
+    int selected_preset_index;
+
+    std::unique_ptr<map_file::MapFile>              map_file;
+    std::unique_ptr<file_watcher::FileWatcher>      map_file_watcher;
+    std::atomic_bool                                map_has_leak = false;
+};
+
 struct AppState {
-    config::Config                                  current_config;
+    std::vector<std::unique_ptr<OpenConfigState>>   open_configs;
+    OpenConfigState*                                current_config;
+    int                                             current_config_index;
     config::UserConfig                              user_config;
     std::string                                     last_loaded_config_name;
 
@@ -40,21 +58,15 @@ struct AppState {
     std::atomic_bool                                stop_compiling;
     std::string                                     compile_status;
     bool                                            last_job_ran_quake;
-    std::atomic_bool                                map_has_leak = false;
 
     FileBrowserCallback                             fb_callback;
     std::string                                     fb_path;
-
-    std::unique_ptr<map_file::MapFile>              map_file;
-    std::unique_ptr<file_watcher::FileWatcher>      map_file_watcher;
 
     std::atomic_bool             console_auto_scroll = true;
     std::atomic_bool             console_lock_scroll = false;
 
     UnsavedChangesCallback       unsaved_changes_callback;
 
-    bool modified = false;
-    bool modified_flags = false;
     bool show_preset_window = false;
     bool show_unsaved_changes_window = false;
     bool show_help_window = false;
