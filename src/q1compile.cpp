@@ -994,16 +994,34 @@ static void HandleCompileStepAction(std::vector<config::CompileStep>& steps, Dra
 
 static void HandleCloseConfig(int idx)
 {
+    int nextidx = idx - 1;
+    if (idx <= 0) {
+        nextidx = g_app->open_configs.size() - 1;
+    }
+    if (g_app->open_configs.size() == 2) {
+        nextidx = 0;
+    }
+    if (g_app->open_configs.size() == 1) {
+        nextidx = -1;
+    }
+
     auto& cfg = *g_app->open_configs[idx];
     if (cfg.modified) {
         ShowUnsavedChangesWindow([idx](bool saved) {
+            g_app->open_configs[idx]->modified = false;
             HandleCloseConfig(idx);
         });
     }
     else {
         // TODO: check if compiling
-        g_app->open_configs.erase(g_app->open_configs.begin() + idx);
-        SelfWriteUserConfig();
+        if (nextidx != -1) {
+            g_app->open_configs.erase(g_app->open_configs.begin() + idx);
+            SetCurrentConfigAndSelect(nextidx);
+            SelfWriteUserConfig();
+        }
+        else {
+            g_app->app_running = false;
+        }
     }
 }
 
@@ -1504,6 +1522,8 @@ static void DrawConsoleView()
     float height = (float)g_app->window_height - ImGui::GetCursorPosY() - 70.0f;
     height = std::fmaxf(100.0f, height);
 
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, INPUT_TEXT_READ_ONLY_COLOR);
+
     if (ImGui::BeginChild("ConsoleView", ImVec2{ (float)g_app->window_width - 28, height }, true)) {
     
         auto& ents = console::GetLogEntries();
@@ -1526,55 +1546,13 @@ static void DrawConsoleView()
     }
 
     ImGui::EndChild();
-}
 
-static void DrawWarningsView()
-{
-    float height = (float)g_app->window_height - ImGui::GetCursorPosY() - 70.0f;
-    height = std::fmaxf(100.0f, height);
-
-    if (ImGui::BeginChild("WarningView", ImVec2{ (float)g_app->window_width - 28, height }, true)) {
-
-    }
-
-    ImGui::EndChild();
+    ImGui::PopStyleColor();
 }
 
 static void DrawCompilerOutputViews()
 {
-    ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
-    if (ImGui::BeginTabBar("compiler output", tab_bar_flags)) {
-
-        ImGui::PushID("console");
-        if (ImGui::BeginTabItem("Console", nullptr)) {
-            DrawConsoleView();
-            ImGui::EndTabItem();
-        }
-        ImGui::PopID();
-
-        ImGui::PushID("qbsp");
-        if (ImGui::BeginTabItem("QBSP", nullptr)) {
-            DrawWarningsView();
-            ImGui::EndTabItem();
-        }
-        ImGui::PopID();
-
-        ImGui::PushID("light");
-        if (ImGui::BeginTabItem("LIGHT", nullptr)) {
-            DrawWarningsView();
-            ImGui::EndTabItem();
-        }
-        ImGui::PopID();
-
-        ImGui::PushID("vis");
-        if (ImGui::BeginTabItem("VIS", nullptr)) {
-            DrawWarningsView();
-            ImGui::EndTabItem();
-        }
-        ImGui::PopID();
-
-        ImGui::EndTabBar();
-    }
+    DrawConsoleView();
 }
 
 // tool preset actions
@@ -1740,7 +1718,7 @@ static void DrawUnsavedChangesWindow()
             ImGui::Text("You have unsaved changes to your config, do you want to save?");
             DrawSeparator(5);
 
-            if (ImGui::Button("Save")) {
+            if (ImGui::Button("Save And Close")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
                 g_app->show_unsaved_changes_window = false;
@@ -1748,14 +1726,14 @@ static void DrawUnsavedChangesWindow()
                 g_app->unsaved_changes_callback(true);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Don't save")) {
+            if (ImGui::Button("Don't Save And Close")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
                 g_app->show_unsaved_changes_window = false;
                 g_app->unsaved_changes_callback(false);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
+            if (ImGui::Button("Don't Close")) {
                 ImGui::CloseCurrentPopup();
                 clicked_btn = true;
                 g_app->show_unsaved_changes_window = false;
@@ -1807,6 +1785,8 @@ static void DrawHelpWindow()
 
 static void DrawMainContent()
 {
+    DrawSpacing(0.0f, 10.0f);
+
     ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_info_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Info")) {
         g_app->current_config->config.ui_section_info_open = true;
@@ -1845,7 +1825,7 @@ static void DrawMainContent()
     DrawSeparator(5);
 
     ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_tools_open, ImGuiCond_Once);
-    if (ImGui::TreeNode("Tools options")) {
+    if (ImGui::TreeNode("Compiler options")) {
         g_app->current_config->config.ui_section_tools_open = true;
 
         DrawSpacing(0, 5);
@@ -1951,6 +1931,12 @@ static void DrawMainContent()
         }
         ImGui::SameLine();
         DrawHelpMarker("Open the map in the editor as soon as q1compile launches.");
+
+        if (ImGui::Checkbox("Auto-save config", &g_app->current_config->config.autosave)) {
+            g_app->current_config->modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker("Auto-saves the config whenever something is modified (q1compile doesn't have a robust undo/redo system so use it at your discretion)");
 
         ImGui::TreePop();
     }
@@ -2192,12 +2178,16 @@ bool qc_render()
         console::Print(c);
     }
 
-    ImGui::ShowDemoWindow();
+    //ImGui::ShowDemoWindow();
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.9f, 0.9f, 0.9f, 1.0f });
     DrawMenuBar();
     DrawMainWindow();
     ImGui::PopStyleColor(1);
+
+    if (g_app->current_config && g_app->current_config->modified && g_app->current_config->config.autosave) {
+        HandleSaveConfig();
+    }
 
     return g_app->app_running;
 }

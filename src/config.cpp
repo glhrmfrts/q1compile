@@ -158,9 +158,9 @@ static CompileStepType ParseCompileStepType(const std::string& tstr)
 std::vector<CompileStep> GetDefaultCompileSteps()
 {
     std::vector<CompileStep> steps;
-    steps.push_back({ COMPILE_QBSP, "qbsp", "", false });
-    steps.push_back({ COMPILE_LIGHT, "light", "", false });
-    steps.push_back({ COMPILE_VIS, "vis", "", false });
+    steps.push_back({ COMPILE_QBSP, "qbsp.exe", "", false });
+    steps.push_back({ COMPILE_LIGHT, "light.exe", "", false });
+    steps.push_back({ COMPILE_VIS, "vis.exe", "", false });
     return steps;
 }
 
@@ -246,6 +246,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     }
     else if (name == "open_editor_on_launch") {
         p.ParseBool(config.open_editor_on_launch);
+    }
+    else if (name == "autosave") {
+        p.ParseBool(config.autosave);
     }
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
@@ -404,6 +407,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "quake_output_enabled", config.quake_output_enabled);
     WriteVar(fh, "compile_map_on_launch", config.compile_map_on_launch);
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
+    WriteVar(fh, "autosave", config.autosave);
     WriteVar(fh, "selected_preset", config.selected_preset);
     WriteVar(fh, "ui_engine_open", config.ui_section_engine_open);
     WriteVar(fh, "ui_info_open", config.ui_section_info_open);

@@ -53,12 +53,13 @@ struct Config
     bool quake_output_enabled;
     bool compile_map_on_launch;
     bool open_editor_on_launch;
+    bool autosave;
 
-    bool                        ui_section_info_open;
-    bool                        ui_section_paths_open;
-    bool                        ui_section_tools_open;
-    bool                        ui_section_engine_open;
-    bool                        ui_section_other_open;
+    bool ui_section_info_open;
+    bool ui_section_paths_open;
+    bool ui_section_tools_open;
+    bool ui_section_engine_open;
+    bool ui_section_other_open;
 
     // Runtime only
     int selected_preset_index;
@@ -73,7 +74,7 @@ struct ToolPreset
     bool builtin = false;
 };
 
-/// UserConfig gets saved to the user directory
+/// UserConfig gets saved to the application directory
 struct UserConfig
 {
     std::string                 version;
