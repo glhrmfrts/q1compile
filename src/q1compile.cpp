@@ -1006,22 +1006,26 @@ static void HandleCloseConfig(int idx)
     }
 
     auto& cfg = *g_app->open_configs[idx];
-    if (cfg.modified) {
+    if (cfg.modified && cfg.config.autosave) {
+        HandleSaveConfig();
+    }
+    else if (cfg.modified) {
         ShowUnsavedChangesWindow([idx](bool saved) {
             g_app->open_configs[idx]->modified = false;
             HandleCloseConfig(idx);
         });
+        return;
+    }
+
+    // TODO: check if compiling
+    if (nextidx != -1) {
+        g_app->user_config.loaded_configs.erase(cfg.path);
+        g_app->open_configs.erase(g_app->open_configs.begin() + idx);
+        SetCurrentConfigAndSelect(nextidx);
+        SelfWriteUserConfig();
     }
     else {
-        // TODO: check if compiling
-        if (nextidx != -1) {
-            g_app->open_configs.erase(g_app->open_configs.begin() + idx);
-            SetCurrentConfigAndSelect(nextidx);
-            SelfWriteUserConfig();
-        }
-        else {
-            g_app->app_running = false;
-        }
+        g_app->app_running = false;
     }
 }
 
@@ -1056,12 +1060,19 @@ static void DrawRecentConfigs()
     int size = g_app->user_config.recent_configs.size();
     for (int i = size - 1; i >= 0; i--) {
         const std::string& path = g_app->user_config.recent_configs[i];
-        if (path == g_app->current_config->path) continue;
+        if (g_app->user_config.loaded_configs.find(path) != g_app->user_config.loaded_configs.end()) continue;
 
         std::string filename = path::Filename(path);
         if (ImGui::MenuItem(filename.c_str(), "", nullptr)) {
             HandleLoadRecentConfig(i);
         }
+    }
+}
+
+static void DrawMenuLink(const char* label, const char* link)
+{
+    if (ImGui::MenuItem(label, "", nullptr)) {
+        OpenLink(link);
     }
 }
 
@@ -1157,23 +1168,13 @@ static void DrawMenuBar()
             if (ImGui::MenuItem("About", "", nullptr)) {
                 g_app->show_help_window = true;
             }
-            if (ImGui::MenuItem("Issue Tracker", "", nullptr)) {
-                OpenLink("https://github.com/glhrmfrts/q1compile/issues");
-            }
-            if (ImGui::MenuItem("Check for updates", "", nullptr)) {
-                OpenLink("https://github.com/glhrmfrts/q1compile/releases");
-            }
+            DrawMenuLink("Issue Tracker", "https://github.com/glhrmfrts/q1compile/issues");
+            DrawMenuLink("Check for updates", "https://github.com/glhrmfrts/q1compile/releases");
             ImGui::Separator();
-            if (ImGui::MenuItem("Quake Mapping tutorials", "", nullptr)) {
-                OpenLink("https://www.youtube.com/channel/UCF502yOYr_olPaw6xgnYmaQ");
-            }
+            DrawMenuLink("Quake Mapping tutorials", "https://www.youtube.com/channel/UCF502yOYr_olPaw6xgnYmaQ");
             ImGui::Separator();
-            if (ImGui::MenuItem("Download compiler tools", "", nullptr)) {
-                OpenLink("https://ericwa.github.io/ericw-tools/");
-            }
-            if (ImGui::MenuItem("Download TrenchBroom map editor", "", nullptr)) {
-                OpenLink("https://trenchbroom.github.io/");
-            }
+            DrawMenuLink("Download compiler tools", "https://ericwa.github.io/ericw-tools/");
+            DrawMenuLink("Download TrenchBroom map editor", "https://trenchbroom.github.io/");
             ImGui::EndMenu();
         }
 
@@ -1936,7 +1937,7 @@ static void DrawMainContent()
             g_app->current_config->modified = true;
         }
         ImGui::SameLine();
-        DrawHelpMarker("Auto-saves the config whenever something is modified (q1compile doesn't have a robust undo/redo system so use it at your discretion)");
+        DrawHelpMarker("Auto-saves the config when closing the config or exiting the application.");
 
         ImGui::TreePop();
     }
@@ -2184,10 +2185,6 @@ bool qc_render()
     DrawMenuBar();
     DrawMainWindow();
     ImGui::PopStyleColor(1);
-
-    if (g_app->current_config && g_app->current_config->modified && g_app->current_config->config.autosave) {
-        HandleSaveConfig();
-    }
 
     return g_app->app_running;
 }

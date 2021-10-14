@@ -1,4 +1,7 @@
-# q1compile v0.6
+## TODO: fix recent configs asking to save unsaved changes
+## TODO: fix font issues
+
+# q1compile v0.7
 
 A GUI to work with Quake map compiling tools.
 
@@ -89,6 +92,17 @@ https://youtu.be/IAhoxXGLce8
 ## Issue Tracker
 
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
+
+
+## Changes - v0.7 - (10/11/2021)
+
+  * Open multiple config tabs.
+  * Customize compilation steps and their order.
+  * Option to auto-save when closing configs or exiting the app.
+  * Save selected compiler options as a new preset.
+  * Utility links to mapping tutorials, downloading tools and editor.
+  * Reorganized UI more logically.
+  * Bugfixes regarding loading/saving recent configs.
 
 
 ## Changes - v0.6 - (20/11/2020)
