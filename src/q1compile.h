@@ -9,7 +9,7 @@
 #include "path.h"
 #include "work_queue.h"
 
-#define CONFIG_RECENT_COUNT 10
+#define CONFIG_RECENT_COUNT 20
 
 typedef int FileBrowserFlags;
 

@@ -286,6 +286,17 @@ static void SetCurrentConfig(int idx)
 
     g_app->current_config_index = idx;
     g_app->current_config = g_app->open_configs[idx].get();
+
+    // Update window title with active config name
+    HWND whandle = (HWND)g_app->platform_data;
+    std::string title = APP_NAME;
+    title.append(": ");
+    title.append(g_app->current_config->config.config_name);
+    if (g_app->current_config->modified) {
+        title.append("*");
+    }
+
+    SetWindowText(whandle, title.c_str());
 }
 
 static void SetCurrentConfigAndSelect(int idx)
@@ -560,52 +571,28 @@ UI Event Handlers
 
 static void HandleNewConfig()
 {
-    if (g_app->current_config->modified) {
-        ShowUnsavedChangesWindow([](bool saved) {
-            g_app->current_config->modified = false;
-            HandleNewConfig();
-        });
-    }
-    else {
-        AddNewConfig();
-        WriteUserConfig(g_app->user_config);
-    }
+    AddNewConfig();
+    WriteUserConfig(g_app->user_config);
 }
 
 static void HandleLoadConfig()
 {
-    if (g_app->current_config->modified) {
-        ShowUnsavedChangesWindow([](bool saved) {
-            g_app->current_config->modified = false;
-            HandleLoadConfig();
-        });
-    }
-    else {
-        std::string pwd = path::Directory(g_app->current_config->path);
-        std::string user_path = pwd;
-        FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
+    std::string pwd = path::Directory(g_app->current_config->path);
+    std::string user_path = pwd;
+    FileBrowserFlags flags = FB_FLAG_LOAD | FB_FLAG_MUST_EXIST;
 
-        if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
-            g_app->fb_callback = FB_LOAD_CONFIG;
-            g_app->fb_path = user_path;
-            HandleFileBrowserCallback();
-        }
+    if (SelectFileDialog("Config File (*.cfg)\0*.cfg\0", flags, user_path)) {
+        g_app->fb_callback = FB_LOAD_CONFIG;
+        g_app->fb_path = user_path;
+        HandleFileBrowserCallback();
     }
 }
 
 static void HandleLoadRecentConfig(int i)
 {
-    if (g_app->current_config->modified) {
-        ShowUnsavedChangesWindow([i](bool saved) {
-            g_app->current_config->modified = false;
-            HandleLoadRecentConfig(i);
-        });
-    }
-    else {
-        const std::string& path = g_app->user_config.recent_configs[i];
-        if (!LoadConfig(path)) {
-            g_app->user_config.recent_configs.erase(g_app->user_config.recent_configs.begin() + i);
-        }
+    const std::string& path = g_app->user_config.recent_configs[i];
+    if (!LoadConfig(path)) {
+        g_app->user_config.recent_configs.erase(g_app->user_config.recent_configs.begin() + i);
     }
 }
 
@@ -1335,18 +1322,26 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
             if (ImGui::Selectable("QBSP", cs.type == config::COMPILE_QBSP))
             {
                 cs.type = config::COMPILE_QBSP;
+                cs.cmd = "qbsp.exe";
+                changed = true;
             }
             if (ImGui::Selectable("LIGHT", cs.type == config::COMPILE_LIGHT))
             {
                 cs.type = config::COMPILE_LIGHT;
+                cs.cmd = "light.exe";
+                changed = true;
             }
             if (ImGui::Selectable("VIS", cs.type == config::COMPILE_VIS))
             {
                 cs.type = config::COMPILE_VIS;
+                cs.cmd = "vis.exe";
+                changed = true;
             }
             if (ImGui::Selectable("CUSTOM", cs.type == config::COMPILE_CUSTOM))
             {
                 cs.type = config::COMPILE_CUSTOM;
+                cs.cmd = cs.ui_last_custom_cmd;
+                changed = true;
             }
         }
         ImGui::EndCombo();
@@ -1381,6 +1376,7 @@ static std::pair<DrawCompileStepAction, bool> DrawCompileStep(config::CompileSte
         if (ImGui::InputTextWithHint("##cmd", "command (click help for variables)", &cs.cmd, flags)) {
             changed = true;
             ReportConfigChange(std::string(label) + " command", cs.cmd);
+            cs.ui_last_custom_cmd = cs.cmd;
         }
         break;
     }
@@ -1434,9 +1430,15 @@ template <typename Handler> static void DrawCompileSteps(std::vector<config::Com
 
     for (size_t i = 0; i < steps.size(); i++) {
         DrawCompileStepAction action;
-        bool changed;
+        bool changed = false;
         std::tie(action, changed) = DrawCompileStep(steps[i], i, flags);
-        actions.emplace_back(action, i);
+        if (changed) {
+            g_app->current_config->modified_steps = true;
+            g_app->current_config->modified = true;
+        }
+        if (action != DRAW_COMPILE_STEP_NONE) {
+            actions.emplace_back(action, i);
+        }
     }
 
     if (!readonly) {
@@ -1451,6 +1453,8 @@ template <typename Handler> static void DrawCompileSteps(std::vector<config::Com
 
     for (const auto& action : actions) {
         HandleAction(steps, action.first, action.second);
+        g_app->current_config->modified_steps = true;
+        g_app->current_config->modified = true;
     }
 }
 
@@ -1624,8 +1628,9 @@ static void DrawPresetWindow()
                 newly_added_index = g_app->user_config.tool_presets.size();
 
                 config::ToolPreset preset = {};
-                preset.name = "New Preset";
-                preset.steps = config::GetDefaultCompileSteps();
+                preset.name = "New Preset " + std::to_string(g_app->user_config.tool_presets.size() + 1);
+                preset.steps = g_app->current_config->config.steps;
+
                 g_app->user_config.tool_presets.push_back(preset);
 
                 g_app->save_current_tools_options_as_preset = false;
@@ -1933,11 +1938,11 @@ static void DrawMainContent()
         ImGui::SameLine();
         DrawHelpMarker("Open the map in the editor as soon as q1compile launches.");
 
-        if (ImGui::Checkbox("Auto-save config", &g_app->current_config->config.autosave)) {
+        if (ImGui::Checkbox("Auto-save on close", &g_app->current_config->config.autosave)) {
             g_app->current_config->modified = true;
         }
         ImGui::SameLine();
-        DrawHelpMarker("Auto-saves the config when closing the config or exiting the application.");
+        DrawHelpMarker("Auto-saves when closing the config or exiting the application.");
 
         ImGui::TreePop();
     }
@@ -2191,6 +2196,13 @@ bool qc_render()
 
 void qc_deinit()
 {
+    for (auto& config : g_app->open_configs) {
+        if (config->modified) {
+            if (config->config.autosave) {
+                config::WriteConfig(config->config, config->path);
+            }
+        }
+    }
     SelfWriteUserConfig();
     delete g_app;
 }

@@ -32,7 +32,7 @@ It comes with a few built-in presets:
   * No Vis               - QBSP and LIGHT enabled, VIS disabled.
   * No Vis, Only ents    - QBSP and LIGHT enabled with "-onlyents" flag, VIS disabled.
   * Fast Vis             - QBSP, LIGHT and VIS enabled with "-fast" flag.
-  * Full                 - QBSP, LIGHT with "-extra4" flag, and VIS with "-level 4" flag.
+  * Full                 - QBSP, LIGHT with "-extra4 -soft" flag, and VIS with "-level 4" flag.
 
 
 ## Managing tool presets

@@ -34,6 +34,7 @@ struct CompileStep
     std::string args;
     bool enabled = false;
     int flags = 0;
+    std::string ui_last_custom_cmd;
 };
 
 /// Config can be saved and loaded from the path the user chooses

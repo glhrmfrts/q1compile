@@ -91,7 +91,7 @@ int __stdcall WinMain(
 
     // Combine multiple fonts into one (e.g. for icon fonts)
     {
-        static ImWchar icon_ranges[] = { 0xeea0, 0xf02e, 0 };
+        static ImWchar icon_ranges[] = { 0xea67, 0xf02e, 0 };
         
         ImFontConfig config = {};
         config.FontDataOwnedByAtlas = false;

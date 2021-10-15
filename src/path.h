@@ -4,6 +4,10 @@
 
 namespace path {
 
+std::wstring Widen(const std::string& text);
+
+std::string Narrow(const std::wstring& text);
+
 std::string qc_GetAppDir();
 
 std::string qc_GetTempDir();
