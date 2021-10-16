@@ -268,6 +268,30 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "ui_paths_open") {
         p.ParseBool(config.ui_section_paths_open);
     }
+    else if (name == "custom_worldspawn_light_field") {
+        std::string f;
+        if (p.ParseString(f)) {
+            config.custom_worldspawn_light_fields.push_back(f);
+        }
+    }
+    else if (name == "custom_brush_light_field") {
+        std::string f;
+        if (p.ParseString(f)) {
+            config.custom_brush_light_fields.push_back(f);
+        }
+    }
+    else if (name == "custom_light_entity") {
+        std::string f;
+        if (p.ParseString(f)) {
+            config.custom_light_entities.push_back(f);
+        }
+    }
+    else if (name == "ignore_field_diff") {
+        std::string f;
+        if (p.ParseString(f)) {
+            config.ignore_field_diff.push_back(f);
+        }
+    }
     else if (name.find("compile_step") != std::string::npos) {
         SetCompileStepVar(name, p, config.steps);
     }
@@ -342,6 +366,12 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
     else if (name == "last_export_preset_location") {
         p.ParseString(config.last_export_preset_location);
     }
+    else if (name == "last_tools_dir") {
+        p.ParseString(config.last_tools_dir);
+    }
+    else if (name == "last_engine_exe") {
+        p.ParseString(config.last_engine_exe);
+    }
     else if (name == "recent_config") {
         std::string value;
         if (p.ParseString(value))
@@ -414,6 +444,18 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "ui_other_open", config.ui_section_other_open);
     WriteVar(fh, "ui_paths_open", config.ui_section_paths_open);
     WriteVar(fh, "ui_tools_open", config.ui_section_tools_open);
+    for (const auto& f : config.custom_worldspawn_light_fields) {
+        WriteVar(fh, "custom_worldspawn_light_field", f);
+    }
+    for (const auto& f : config.custom_brush_light_fields) {
+        WriteVar(fh, "custom_brush_light_field", f);
+    }
+    for (const auto& f : config.custom_light_entities) {
+        WriteVar(fh, "custom_light_entity", f);
+    }
+    for (const auto& f : config.ignore_field_diff) {
+        WriteVar(fh, "ignore_field_diff", f);
+    }
     
     // write compile steps
     for (const auto& step : config.steps) {
@@ -453,6 +495,8 @@ void WriteUserConfig(const UserConfig& config)
     WriteVar(fh, "version", APP_VERSION);
     WriteVar(fh, "last_import_preset_location", config.last_import_preset_location);
     WriteVar(fh, "last_export_preset_location", config.last_export_preset_location);
+    WriteVar(fh, "last_tools_dir", config.last_tools_dir);
+    WriteVar(fh, "last_engine_exe", config.last_engine_exe);
 
     // write loaded configs
     for (const auto& lc : config.loaded_configs) {

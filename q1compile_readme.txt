@@ -1,6 +1,3 @@
-## TODO: fix recent configs asking to save unsaved changes
-## TODO: fix font issues
-
 # q1compile v0.7
 
 A GUI to work with Quake map compiling tools.
@@ -52,6 +49,7 @@ there is a 'Actions...' selection dialog where you can:
   * Copy              - Create a new preset which is a duplicate of this one.
   * Select            - Make this your current preset in the configuration file.
   * Export            - Export this preset to a .pre file.
+  * Remove            - Delete this preset.
 
 
 ## Menus/Actions
@@ -94,15 +92,16 @@ https://youtu.be/IAhoxXGLce8
 You can open issues and request features at https://github.com/glhrmfrts/q1compile/issues.
 
 
-## Changes - v0.7 - (10/11/2021)
+## Changes - v0.7 - (16/10/2021)
 
   * Open multiple config tabs.
-  * Customize compilation steps and their order.
+  * Customize compilation steps order and add custom commands with variables.
   * Option to auto-save when closing configs or exiting the app.
   * Save selected compiler options as a new preset.
   * Utility links to mapping tutorials, downloading tools and editor.
   * Reorganized UI more logically.
-  * Bugfixes regarding loading/saving recent configs.
+  * Bugfix: regarding recent configs history.
+  * Bugfix: watch map file sometimes failed to detect changes.
 
 
 ## Changes - v0.6 - (20/11/2020)

@@ -26,7 +26,7 @@ static void HandleFileBrowserCallback();
 
 static void ReportCopy(const std::string& from_path, const std::string& to_path);
 
-static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const map_file::MapFile& map_b);
+static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const map_file::MapFile& map_b, const config::Config& cfg);
 
 static std::string ReplaceCompileVars(const std::string& args, const config::Config& cfg);
 
@@ -163,7 +163,7 @@ struct CompileJob
                 if (prev_map_file && state->config.watch_map_file && state->config.auto_apply_onlyents && !ignore_diff) {
                     g_app->compile_output.append("Doing map diff...\n");
 
-                    config::ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *state->map_file);
+                    config::ToolPreset diff_pre = GetMapDiffArgs(*prev_map_file, *state->map_file, state->config);
 
                     std::vector<config::CompileStep> new_steps;
                     for (const auto& step : diff_pre.steps) {
@@ -300,6 +300,8 @@ struct CompileJob
             cmd.append(args);
 
             ExecuteCompileProcess(cmd, pwd, !state->config.quake_output_enabled);
+
+            g_app->compile_status = "Finished";
         }
     }
 };
@@ -394,10 +396,17 @@ static void ReportCopy(const std::string& from_path, const std::string& to_path)
     g_app->compile_output.append("\n");
 }
 
-static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const map_file::MapFile& map_b)
+static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const map_file::MapFile& map_b, const config::Config& cfg)
 {
     config::ToolPreset pre = {};
-    auto flags = map_file::GetDiffFlags(map_a, map_b);
+    
+    auto flags = map_file::GetDiffFlags(
+        map_a, map_b,
+        cfg.custom_worldspawn_light_fields,
+        cfg.custom_brush_light_fields,
+        cfg.custom_light_entities,
+        cfg.ignore_field_diff
+    );
 
     if (flags & map_file::MAP_DIFF_BRUSHES) {
         pre.steps.push_back(config::CompileStep{config::COMPILE_QBSP, "qbsp.exe", "", true, 0});
@@ -417,7 +426,67 @@ static config::ToolPreset GetMapDiffArgs(const map_file::MapFile& map_a, const m
 
 static std::string ReplaceCompileVars(const std::string& args, const config::Config& cfg)
 {
-    return args;
+    static std::unordered_map<std::string, std::function<std::string(const config::Config& cfg)>> cmd_variables = {
+        {"MAP_FILE", [](const config::Config& cfg) -> std::string {
+            std::string map_file = path::Filename(cfg.config_paths[config::PATH_MAP_SOURCE]);
+            return path::Join(cfg.config_paths[config::PATH_WORK_DIR], map_file);
+        }},
+        {"BSP_FILE", [](const config::Config& cfg) -> std::string {
+            std::string map_file = path::Filename(cfg.config_paths[config::PATH_MAP_SOURCE]);
+            common::StrReplace(map_file, ".map", ".bsp");
+            return path::Join(cfg.config_paths[config::PATH_WORK_DIR], map_file);
+        }},
+        {"MAP_FILE_BASENAME", [](const config::Config& cfg) -> std::string {
+            return path::Filename(cfg.config_paths[config::PATH_MAP_SOURCE]);
+        }},
+        {"MAP_FILE_BASENAME_NOEXT", [](const config::Config& cfg) -> std::string {
+            std::string map_file = path::Filename(cfg.config_paths[config::PATH_MAP_SOURCE]);
+            std::string filename, ext;
+            path::SplitExtension(map_file, filename, ext);
+            return filename;
+        }},
+        {"MAP_SOURCE_FILE", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_MAP_SOURCE];
+        }},
+        {"MAP_SOURCE_DIR", [](const config::Config& cfg) -> std::string {
+            return path::Directory(cfg.config_paths[config::PATH_MAP_SOURCE]);
+        }},
+        {"TOOLS_DIR", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_TOOLS_DIR];
+        }},
+        {"WORK_DIR", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_WORK_DIR];
+        }},
+        {"OUTPUT_DIR", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_OUTPUT_DIR];
+        }},
+        {"ENGINE_EXE", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_ENGINE_EXE];
+        }},
+        {"EDITOR_EXE", [](const config::Config& cfg) -> std::string {
+            return cfg.config_paths[config::PATH_EDITOR_EXE];
+        }},
+        {"DS", [](const config::Config& cfg) -> std::string {
+            return "\\";
+        }}
+    };
+
+    std::string new_args = args;
+    for (const auto& it : cmd_variables) {
+        const auto& varname = it.first;
+        const auto& fn = it.second;
+
+        std::string pattern = "{{";
+        pattern.append(varname);
+        pattern.append("}}");
+
+        std::string value = fn(cfg);
+
+        // Replace every ocurrence of the variable
+        while (common::StrReplace(new_args, pattern, value));
+    }
+
+    return new_args;
 }
 
 void StartCompileJob(OpenConfigState* cfg, CompileFlags flags)

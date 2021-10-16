@@ -28,9 +28,14 @@ struct MapFile
 
     std::string GetBrushContent() const;
 
-    std::string GetEntityContent() const;
+    std::string GetEntityContent(const std::vector<std::string>& ignore_field_diff) const;
 
-    std::string GetLightContent() const;
+    std::string GetLightContent(
+        const std::vector<std::string>& custom_worldspawn_light_fields,
+        const std::vector<std::string>& custom_brush_light_fields,
+        const std::vector<std::string>& custom_light_entities,
+        const std::vector<std::string>& ignore_field_diff
+    ) const;
 
     bool Good() const { return !_text.empty(); }
 
@@ -38,6 +43,11 @@ struct MapFile
     std::vector<MapEntity> _entities;
 };
 
-MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b);
+MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b,
+    const std::vector<std::string>& custom_worldspawn_light_fields,
+    const std::vector<std::string>& custom_brush_light_fields,
+    const std::vector<std::string>& custom_light_entities,
+    const std::vector<std::string>& ignore_field_diff
+);
 
 }

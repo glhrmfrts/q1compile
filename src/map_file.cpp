@@ -114,14 +114,19 @@ static bool Contains(std::string_view hay, std::string_view ned)
     return hay.find(ned) != std::string::npos;
 }
 
-static bool ShouldIgnoreFieldForDiff(std::string_view field)
+static bool ShouldIgnoreFieldForDiff(std::string_view field, const std::vector<std::string>& ignore_field_diff)
 {
+    for (const auto& custom_field : ignore_field_diff) {
+        if (field == custom_field) {
+            return true;
+        }
+    }
     return (
         (field == "_tb_group") || (field == "_tb_id")
     );
 }
 
-static bool IsWorldspawnLightField(std::string_view field)
+static bool IsWorldspawnLightField(std::string_view field, const std::vector<std::string>& custom_worldspawn_light_fields)
 {
     static const char* light_fields[] = {
         // Ambient Occlusion options
@@ -144,12 +149,17 @@ static bool IsWorldspawnLightField(std::string_view field)
         if (field == light_fields[i]) {
             return true;
         }
+        for (const auto& custom_field : custom_worldspawn_light_fields) {
+            if (field == custom_field) {
+                return true;
+            }
+        }
     }
 
     return false;
 }
 
-static bool IsBrushEntityLightField(std::string_view field)
+static bool IsBrushEntityLightField(std::string_view field, const std::vector<std::string>& custom_brush_light_fields)
 {
     static const char* light_fields[] = {
         "_minlight", "_minlight_color", "_lightignore", "_minlight_exclude",
@@ -161,8 +171,23 @@ static bool IsBrushEntityLightField(std::string_view field)
         if (field == light_fields[i]) {
             return true;
         }
+        for (const auto& custom_field : custom_brush_light_fields) {
+            if (field == custom_field) {
+                return true;
+            }
+        }
     }
 
+    return false;
+}
+
+static bool IsCustomLightEntity(std::string_view classname, const std::vector<std::string>& custom_light_entities)
+{
+    for (const auto& c : custom_light_entities) {
+        if (classname == c) {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -204,7 +229,7 @@ std::string MapFile::GetBrushContent() const {
     return buf;
 }
 
-std::string MapFile::GetEntityContent() const {
+std::string MapFile::GetEntityContent(const std::vector<std::string>& ignore_field_diff) const {
     std::string buf;
     for (const auto& ent : _entities) {
         auto classname_it = ent.fields.find("classname");
@@ -214,7 +239,7 @@ std::string MapFile::GetEntityContent() const {
 
         if (!Contains(classname_it->second, "light")) {
             for (const auto& field : ent.fields) {
-                if (!ShouldIgnoreFieldForDiff(field.first)) {
+                if (!ShouldIgnoreFieldForDiff(field.first, ignore_field_diff)) {
                     buf.append(field.first);
                     buf.append(field.second);
                 }
@@ -224,7 +249,12 @@ std::string MapFile::GetEntityContent() const {
     return buf;
 }
 
-std::string MapFile::GetLightContent() const {
+std::string MapFile::GetLightContent(
+    const std::vector<std::string>& custom_worldspawn_light_fields,
+    const std::vector<std::string>& custom_brush_light_fields,
+    const std::vector<std::string>& custom_light_entities,
+    const std::vector<std::string>& ignore_field_diff
+) const {
     std::string buf;
     for (const auto& ent : _entities) {
         auto classname_it = ent.fields.find("classname");
@@ -232,10 +262,11 @@ std::string MapFile::GetLightContent() const {
             continue;
         }
 
-        if (Contains(classname_it->second, "light") && (ent.brush_content.size() == 0)) {
+        if ((Contains(classname_it->second, "light") && (ent.brush_content.size() == 0))
+            || IsCustomLightEntity(classname_it->second, custom_light_entities)) {
             // Check light entity fields
             for (const auto& field : ent.fields) {
-                if (!ShouldIgnoreFieldForDiff(field.first)) {
+                if (!ShouldIgnoreFieldForDiff(field.first, ignore_field_diff)) {
                     buf.append(field.first);
                     buf.append(field.second);
                 }
@@ -245,7 +276,7 @@ std::string MapFile::GetLightContent() const {
         if (ent.brush_content.size() > 0) {
             // Check light-related fields for brush entities
             for (const auto& field : ent.fields) {
-                if (IsBrushEntityLightField(field.first)) {
+                if (IsBrushEntityLightField(field.first, custom_brush_light_fields)) {
                     buf.append(field.first);
                     buf.append(field.second);
                 }
@@ -255,7 +286,7 @@ std::string MapFile::GetLightContent() const {
         if (classname_it->second == "worldspawn") {
             // Check light-related fields for the worldspawn entity
             for (const auto& field : ent.fields) {
-                if (IsWorldspawnLightField(field.first)) {
+                if (IsWorldspawnLightField(field.first, custom_worldspawn_light_fields)) {
                     buf.append(field.first);
                     buf.append(field.second);
                 }
@@ -278,7 +309,7 @@ static std::string GetDiffFlagName(MapDiffFlags f)
     return "none";
 }
 
-static MapDiffFlags GetFlagForDiffContent(std::string ca, std::string cb, MapDiffFlags flag)
+static MapDiffFlags GetFlagForDiffContent(const std::string& ca, const std::string& cb, MapDiffFlags flag)
 {
 #if 0
     std::string fna = GetDiffFlagName(flag) + "_a.txt";
@@ -295,12 +326,20 @@ static MapDiffFlags GetFlagForDiffContent(std::string ca, std::string cb, MapDif
     }
 }
 
-MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b)
+MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b,
+    const std::vector<std::string>& custom_worldspawn_light_fields,
+    const std::vector<std::string>& custom_brush_light_fields,
+    const std::vector<std::string>& custom_light_entities,
+    const std::vector<std::string>& ignore_field_diff
+)
 {
+    std::string a_light = a.GetLightContent(custom_worldspawn_light_fields, custom_brush_light_fields, custom_light_entities, ignore_field_diff);
+    std::string b_light = b.GetLightContent(custom_worldspawn_light_fields, custom_brush_light_fields, custom_light_entities, ignore_field_diff);
+
     MapDiffFlags flags = MAP_DIFF_NONE;
     flags |= GetFlagForDiffContent(a.GetBrushContent(), b.GetBrushContent(), MAP_DIFF_BRUSHES);
-    flags |= GetFlagForDiffContent(a.GetEntityContent(), b.GetEntityContent(), MAP_DIFF_ENTS);
-    flags |= GetFlagForDiffContent(a.GetLightContent(), b.GetLightContent(), MAP_DIFF_LIGHTS);
+    flags |= GetFlagForDiffContent(a.GetEntityContent(ignore_field_diff), b.GetEntityContent(ignore_field_diff), MAP_DIFF_ENTS);
+    flags |= GetFlagForDiffContent(a_light, b_light, MAP_DIFF_LIGHTS);
     return flags;
 }
 

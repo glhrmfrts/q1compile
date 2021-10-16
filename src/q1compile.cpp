@@ -163,9 +163,9 @@ static std::vector<const char*> g_config_paths_help = {
     "Where the compiler tools are (qbsp.exe, light.exe, vis.exe), check the menu \"Download compiler tools\" if you don't have them yet",
     "Temporary dir to work with files, it MUST NOT be the same as the map source directory. If you don't care about this setting, leave it in the default value (see \"Reset work dir\" menu)",
     "Where the compiled .bsp and .lit files will be",
-    "The map editor executable, only required if you want to use the option or menu \"Open map in editor\", otherwise it's okay to leave it blank",
-    "The Quake engine executable",
-    "The .map file to compile"
+    "The map editor executable, only required if you want to use the menu \"Open map in editor\", otherwise it's okay to leave it blank",
+    "The Quake engine executable, required to run the map",
+    "The .map source file to compile"
 };
 
 static bool g_tabforceselected;
@@ -217,6 +217,7 @@ static void HandleMapSourceChanged()
 {
     const std::string& path = g_app->current_config->config.config_paths[config::PATH_MAP_SOURCE];
     g_app->current_config->map_file_watcher->SetPath(path);
+    g_app->current_config->map_file_watcher->SetEnabled(g_app->current_config->config.watch_map_file);
     g_app->current_config->map_file = std::make_unique<map_file::MapFile>(path);
     if (!g_app->current_config->map_file->Good()) {
         g_app->current_config->map_file = nullptr;
@@ -342,6 +343,8 @@ static void AddNewConfig()
     state.config.config_name = "New Config";
     state.config.config_paths[config::PATH_WORK_DIR] = GetDefaultWorkDir();
     state.config.config_paths[config::PATH_TOOLS_DIR] = g_app->user_config.last_tools_dir;
+    state.config.config_paths[config::PATH_ENGINE_EXE] = g_app->user_config.last_engine_exe;
+    state.config.steps = config::GetDefaultCompileSteps();
 
     SetCurrentConfigAndSelect(g_app->open_configs.size() - 1);
 }
@@ -621,22 +624,66 @@ static void HandleSaveConfig()
     SaveConfig(g_app->current_config->path);
 }
 
+static bool ValidateToCompile(bool will_run_quake = false)
+{
+    bool ok = true;
+    const auto& cfg = g_app->current_config->config;
+
+    if (cfg.config_paths[config::PATH_MAP_SOURCE].empty()) {
+        g_app->console_auto_scroll = true;
+        console::PrintError("Please set the Map Source to a valid .map file!\n");
+        ok = false;
+    }
+    if (cfg.config_paths[config::PATH_TOOLS_DIR].empty()) {
+        g_app->console_auto_scroll = true;
+        console::PrintError("Please set the Tools Directory to a valid path!\n");
+        ok = false;
+    }
+    if (cfg.config_paths[config::PATH_OUTPUT_DIR].empty()) {
+        g_app->console_auto_scroll = true;
+        console::PrintError("Please set the Output Directory to a valid path!\n");
+        ok = false;
+    }
+    if (will_run_quake && cfg.config_paths[config::PATH_ENGINE_EXE].empty()) {
+        g_app->console_auto_scroll = true;
+        console::PrintError("Please set the Output Directory to a valid path!\n");
+        ok = false;
+    }
+
+    return ok;
+}
+
 static void HandleCompileAndRun()
 {
-    // run quake and ignore diff
-    compile::StartCompileJob(g_app->current_config, compile::CompileFlags(compile::CF_RUN_QUAKE | compile::CF_IGNORE_DIFF));
+    if (!ValidateToCompile(true)) {
+        console::PrintError("Please fix errors above to be able to compile.\n\n");
+    }
+    else {
+        // run quake and ignore diff
+        compile::StartCompileJob(g_app->current_config, compile::CompileFlags(compile::CF_RUN_QUAKE | compile::CF_IGNORE_DIFF));
+    }
 }
 
 static void HandleCompileOnly()
 {
-    // don't run quake and ignore diff
-    compile::StartCompileJob(g_app->current_config, compile::CF_IGNORE_DIFF);
+    if (!ValidateToCompile()) {
+        console::PrintError("Please fix errors above to be able to compile.\n\n");
+    }
+    else {
+        // don't run quake and ignore diff
+        compile::StartCompileJob(g_app->current_config, compile::CF_IGNORE_DIFF);
+    }
 }
 
 static void HandleAutoCompile(OpenConfigState* state)
 {
-    // don't run quake and don't ignore diff
-    compile::StartCompileJob(state, compile::CF_NONE);
+    if (!ValidateToCompile()) {
+        console::PrintError("Please fix errors above to be able to compile.");
+    }
+    else {
+        // don't run quake and don't ignore diff
+        compile::StartCompileJob(state, compile::CF_NONE);
+    }
 }
 
 static void HandleStopCompiling()
@@ -1218,8 +1265,11 @@ static bool DrawFileInput(const char* label, config::ConfigPath path, float spac
         if (path == config::PATH_MAP_SOURCE) {
             HandleMapSourceChanged();
         }
-        else if (path == config::PATH_TOOLS_DIR) {
+        else if (path == config::PATH_TOOLS_DIR && !g_app->current_config->config.config_paths[config::PATH_TOOLS_DIR].empty()) {
             g_app->user_config.last_tools_dir = g_app->current_config->config.config_paths[path];
+        }
+        else if (path == config::PATH_ENGINE_EXE && !g_app->current_config->config.config_paths[config::PATH_ENGINE_EXE].empty()) {
+            g_app->user_config.last_engine_exe = g_app->current_config->config.config_paths[path];
         }
     }
 
@@ -1908,12 +1958,12 @@ static void DrawMainContent()
             g_app->current_config->map_file_watcher->SetEnabled(g_app->current_config->config.watch_map_file);
         }
         ImGui::SameLine();
-        DrawHelpMarker("Watch the map source file for saves/changes and automatically compile. It will also compile when q1compile is launched.");
+        DrawHelpMarker("Watch the map source file for saves/changes and automatically compile.");
 
         if (g_app->current_config->config.watch_map_file) {
             float spacing = ImGui::GetTreeNodeToLabelSpacing();
             DrawSpacing(spacing, 0);ImGui::SameLine();
-            if (ImGui::Checkbox("Apply -onlyents automatically (experimental)", &g_app->current_config->config.auto_apply_onlyents)) {
+            if (ImGui::Checkbox("Apply -onlyents automatically", &g_app->current_config->config.auto_apply_onlyents)) {
                 g_app->current_config->modified = true;
             }
             ImGui::SameLine();
@@ -1925,18 +1975,6 @@ static void DrawMainContent()
             );
             DrawSpacing(0, 5.0f);
         }
-
-        if (ImGui::Checkbox("Compile map on launch", &g_app->current_config->config.compile_map_on_launch)) {
-            g_app->current_config->modified = true;
-        }
-        ImGui::SameLine();
-        DrawHelpMarker("Compile the map as soon as q1compile launches.");
-
-        if (ImGui::Checkbox("Open editor on launch", &g_app->current_config->config.open_editor_on_launch)) {
-            g_app->current_config->modified = true;
-        }
-        ImGui::SameLine();
-        DrawHelpMarker("Open the map in the editor as soon as q1compile launches.");
 
         if (ImGui::Checkbox("Auto-save on close", &g_app->current_config->config.autosave)) {
             g_app->current_config->modified = true;

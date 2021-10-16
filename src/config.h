@@ -44,6 +44,10 @@ struct Config
     std::string config_name;
     std::array<std::string, PATH_COUNT> config_paths;
     std::vector<CompileStep> steps;
+    std::vector<std::string> custom_worldspawn_light_fields;
+    std::vector<std::string> custom_brush_light_fields;
+    std::vector<std::string> custom_light_entities;
+    std::vector<std::string> ignore_field_diff;
 
     std::string quake_args;
     std::string selected_preset;
@@ -83,6 +87,7 @@ struct UserConfig
     std::string                 last_import_preset_location;
     std::string                 last_export_preset_location;
     std::string                 last_tools_dir;
+    std::string                 last_engine_exe;
     std::deque<std::string>     recent_configs;
     std::vector<ToolPreset>     tool_presets;
     std::string                 selected_config;
