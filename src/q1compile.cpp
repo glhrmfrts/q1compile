@@ -2211,10 +2211,26 @@ void qc_resize(unsigned int width, unsigned int height)
 bool qc_render()
 {
     float dt = ImGui::GetIO().DeltaTime;
-    for (auto& config : g_app->open_configs) {
-        if (config->map_file_watcher->Update(dt)) {
-            HandleAutoCompile(config.get());
+    for (auto& config : g_app->open_tabs) {
+        if (config->tab_type == TAB_CONFIG) {
+            if (config->open_config.map_file_watcher->Update(dt)) {
+                HandleAutoCompile(&config->open_config);
+            }
         }
+    }
+
+    if (g_app->current_tab->tab_type == TAB_RENDERER) {
+        if (g_app->current_tab->open_renderer.bsp_file_watcher->Update(dt)) {
+            const auto& path = g_app->current_tab->open_renderer.bsp_path;
+            std::string err = g_app->current_tab->open_renderer.bsp_data.ReadFromFile(path);
+            if (!err.empty()) {
+                console::PrintError(path.c_str());
+                console::PrintError(": ");
+                console::PrintError(err.c_str());
+                console::Print("\n");
+            }
+        }
+        g_app->renderer->RenderBsp(g_app->current_tab->open_renderer.bsp_data);
     }
 
     while (!g_app->compile_output.empty()) {

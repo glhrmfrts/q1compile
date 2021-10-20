@@ -7,6 +7,7 @@
 #include "q1compile.h"
 #include "shell_command.h"
 #include "sub_process.h"
+#include "bsp.h"
 
 extern AppState* g_app;
 
@@ -247,6 +248,8 @@ struct CompileJob
             }
 
             if (copy_bsp && path::Exists(work_bsp)) {
+                auto bsp_data = bsp::ReadBsp(work_bsp);
+
                 if (path::Copy(work_bsp, out_bsp)) {
                     ReportCopy(work_bsp, out_bsp);
                 }

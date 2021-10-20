@@ -8,6 +8,7 @@
 #include "mutex_char_buffer.h"
 #include "path.h"
 #include "work_queue.h"
+#include "render.h"
 
 #define CONFIG_RECENT_COUNT 20
 
@@ -29,6 +30,11 @@ enum FileBrowserCallback {
     FB_CONFIG_STR,
 };
 
+enum TabType {
+    TAB_CONFIG,
+    TAB_RENDERER,
+};
+
 struct OpenConfigState {
     config::Config config;
 
@@ -45,10 +51,21 @@ struct OpenConfigState {
     std::atomic_bool                                map_has_leak = false;
 };
 
+struct OpenRendererState {
+    OpenConfigState* source_config;
+    bsp::Bsp bsp_data;
+};
+
+struct OpenTabState {
+    OpenConfigState open_config;
+    OpenRendererState open_renderer;
+    TabType tab_type;
+};
+
 struct AppState {
-    std::vector<std::unique_ptr<OpenConfigState>>   open_configs;
-    OpenConfigState*                                current_config;
-    int                                             current_config_index;
+    std::vector<std::unique_ptr<OpenTabState>>      open_tabs;
+    OpenTabState*                                   current_tab;
+    int                                             current_tab_index;
     config::UserConfig                              user_config;
     std::string                                     last_loaded_config_name;
 
@@ -66,6 +83,8 @@ struct AppState {
     std::atomic_bool             console_lock_scroll = false;
 
     UnsavedChangesCallback       unsaved_changes_callback;
+
+    std::unique_ptr<render::Renderer> renderer;
 
     bool show_preset_window = false;
     bool show_unsaved_changes_window = false;
