@@ -6,6 +6,7 @@
 #include "config.h"
 #include "common.h"
 #include "path.h"
+#include "console.h"
 
 namespace config {
 
@@ -39,6 +40,8 @@ struct ConfigLineParser
             str.push_back(Ch());
             _offs++;
         }
+        if (Ch()) { _offs++; }
+
         return true;
     }
 
@@ -55,6 +58,8 @@ struct ConfigLineParser
             str.push_back(Ch());
             _offs++;
         }
+        if (Ch()) { _offs++; }
+
         return true;
     }
 
@@ -92,6 +97,15 @@ static void WriteVar(std::ofstream& fh, const std::string& name, const std::stri
     WriteVarName(fh, name);
     fh << " ";
     fh << "\"" << value << "\"" << "\n";
+}
+
+static void WriteVar(std::ofstream& fh, const std::string& name, const std::string& value1, const std::string& value2, const std::string& value3)
+{
+    WriteVarName(fh, name);
+    fh << " ";
+    fh << "\"" << value1 << "\"" << " ";
+    fh << "\"" << value2 << "\"" << " ";
+    fh << "\"" << value3 << "\"" << "\n";
 }
 
 static void WriteVar(std::ofstream& fh, const std::string& name, const char* value)
@@ -372,6 +386,34 @@ static void SetUserConfigVar(UserConfig& config, std::string name, ConfigLinePar
     else if (name == "last_engine_exe") {
         p.ParseString(config.last_engine_exe);
     }
+    else if (name == "keybind") {
+        std::string keys, cmd;
+        if (!p.ParseString(keys)) { return; }
+        if (!p.ParseString(cmd)) { return; }
+
+        keybind::KeyBindCommandArgs args{};
+
+        auto cmd_type = keybind::ParseCommandType(cmd);
+        switch (cmd_type) {
+        case keybind::KEYCMD_SHELL_COMMAND:
+            if (!p.ParseString(args[0])) { return; }
+            break;
+        case keybind::KEYCMD_COMPILE:
+        case keybind::KEYCMD_COMPILE_WITH_PRESET:
+            p.ParseString(args[0]); // run quake?
+            p.ParseString(args[1]); // preset
+
+            // $keybind "ctrl+shift+d" compile_preset true "dirtdebug only"
+            break;
+        default:
+            console::PrintError("Unknown keybind command: '");
+            console::PrintError(cmd.c_str());
+            console::PrintError("'\n");
+            return;
+        }
+
+        config.keybinds->AddKeyBind(keys, cmd_type, args);
+    }
     else if (name == "recent_config") {
         std::string value;
         if (p.ParseString(value))
@@ -508,6 +550,11 @@ void WriteUserConfig(const UserConfig& config)
         WriteVar(fh, "recent_config", rc);
     }
 
+    // write keybinds
+    for (const auto& it : config.keybinds->binds) {
+        WriteVar(fh, "keybind", it.first, keybind::GetCommandTypeString(it.second->type), it.second->args[0]);
+    }
+
     // write tool presets
     for (const auto& preset : config.tool_presets) {
         if (!preset.builtin) {
@@ -528,6 +575,8 @@ UserConfig ReadUserConfig()
         return {};
 
     UserConfig config = {};
+
+    config.keybinds = std::make_unique<keybind::KeyBindState>();
 
     ParseConfigFile(path, [&config](std::string name, ConfigLineParser& p) {
         SetUserConfigVar(config, name, p);

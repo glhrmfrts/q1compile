@@ -335,6 +335,21 @@ struct HelpJob
     }
 };
 
+struct ShellCommandJob
+{
+    OpenConfigState* state;
+    std::string mcmd;
+
+    void operator()()
+    {
+        auto cmd = ReplaceCompileVars(mcmd, state->config);
+        g_app->compile_output.append("Starting: " + cmd + "\n");
+        g_app->compile_status = cmd;
+        ExecuteCompileCommand(cmd, "");
+        g_app->compile_output.append("Finished: " + cmd + "\n");
+    }
+};
+
 template<class T>
 static void ReadToMutexCharBuffer(T& obj, std::atomic_bool* stop, mutex_char_buffer::MutexCharBuffer* out)
 {
@@ -506,6 +521,11 @@ void StartCompileJob(OpenConfigState* cfg, CompileFlags flags)
 void StartHelpJob(config::CompileStepType cstype)
 {
     g_app->compile_queue->AddWork(0, HelpJob{ g_app->current_config, cstype });
+}
+
+void StartShellCommandJob(OpenConfigState* cfg, const std::string& cmd)
+{
+    g_app->compile_queue->AddWork(0, ShellCommandJob{ cfg, cmd });
 }
 
 void EnqueueCompileJob(OpenConfigState* cfg, CompileFlags flags)
