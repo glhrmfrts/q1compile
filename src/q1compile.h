@@ -44,7 +44,11 @@ struct OpenConfigState {
     std::string path;
     std::string last_loaded_config_name;
 
+    // 1-based index of selected preset.
     int selected_preset_index;
+
+    // 1-based index of override preset (in case of keybind command).
+    int kb_override_preset_index;
 
     std::unique_ptr<map_file::MapFile>              map_file;
     std::unique_ptr<file_watcher::FileWatcher>      map_file_watcher;

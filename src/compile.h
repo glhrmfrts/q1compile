@@ -17,6 +17,8 @@ void StartHelpJob(config::CompileStepType);
 
 void StartCompileJob(OpenConfigState* cfg, CompileFlags);
 
+void StartShellCommandJob(OpenConfigState* cfg, const std::string& cmd);
+
 void EnqueueCompileJob(OpenConfigState* cfg, CompileFlags);
 
 }

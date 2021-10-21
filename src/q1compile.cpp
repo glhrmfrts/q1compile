@@ -248,6 +248,7 @@ static void AddRecentConfig(const std::string& path)
     g_app->user_config.recent_configs.push_back(path);
 }
 
+// Returns the index of the preset with the name specified or -1 if not found.
 static int FindPresetIndex(const std::string& name)
 {
     for (std::size_t i = 0; i < g_app->user_config.tool_presets.size(); i++) {
@@ -1066,6 +1067,41 @@ static void HandleCloseConfig(int idx)
 static void OpenLink(const std::string& link)
 {
     shell_command::ShellCommand cmd("start " + link, "");
+}
+
+static void ProcessKeyBindCommand(const keybind::KeyBindCommand& cmd)
+{
+    switch (cmd.type) {
+    case keybind::KEYCMD_COMPILE: {
+        bool run_quake = cmd.args[0] == "run_quake";
+        compile::CompileFlags flags = compile::CF_IGNORE_DIFF;
+        if (run_quake) { flags = compile::CompileFlags((unsigned int)flags | compile::CF_RUN_QUAKE); }
+
+        compile::StartCompileJob(g_app->current_config, flags);
+        break;
+    }
+    case keybind::KEYCMD_COMPILE_WITH_PRESET: {
+        bool run_quake = cmd.args[0] == "run_quake";
+        compile::CompileFlags flags = compile::CF_IGNORE_DIFF;
+        if (run_quake) { flags = compile::CompileFlags((unsigned int)flags | compile::CF_RUN_QUAKE); }
+
+        int preset_index = FindPresetIndex(cmd.args[1]);
+        if (preset_index == -1) {
+            console::PrintError("Could not find preset: ");
+            console::PrintError(cmd.args[1].c_str());
+            console::PrintError("\n");
+            return;
+        }
+
+        g_app->current_config->kb_override_preset_index = preset_index + 1;
+        compile::StartCompileJob(g_app->current_config, flags);
+        break;
+    }
+    case keybind::KEYCMD_SHELL_COMMAND: {
+        compile::StartShellCommandJob(g_app->current_config, cmd.args[0]);
+        break;
+    }
+    }
 }
 
 /*
@@ -2131,72 +2167,98 @@ void qc_key_down(unsigned int key)
     auto& io = ImGui::GetIO();
     if (io.WantCaptureKeyboard) return;
 
+    bool handled = false;
+
     switch (key) {
     case 'C':
         if (io.KeyCtrl) {
             if (io.KeyShift) {
                 HandleCompileOnly();
+                handled = true;
             }
             else {
                 HandleCompileAndRun();
+                handled = true;
             }
         }
         break;
     case 'B':
         if (io.KeyCtrl) {
             HandleStopCompiling();
+            handled = true;
         }
         break;
     case 'E':
         if (io.KeyCtrl) {
             if (io.KeyShift) {
                 HandleOpenEditor();
+                handled = true;
             }
             else {
                 HandleOpenMapInEditor();
+                handled = true;
             }
         }
         break;
     case 'R':
         if (io.KeyCtrl) {
             HandleRun();
+            handled = true;
         }
         break;
     case 'N':
         if (io.KeyCtrl) {
             HandleNewConfig();
+            handled = true;
         }
         break;
     case 'O':
         if (io.KeyCtrl) {
             HandleLoadConfig();
+            handled = true;
         }
         break;
     case 'S':
         if (io.KeyCtrl) {
             if (io.KeyShift) {
                 HandleSaveConfigAs();
+                handled = true;
             }
             else {
                 HandleSaveConfig();
+                handled = true;
             }
         }
         break;
     case 'P':
         if (io.KeyCtrl) {
             g_app->show_preset_window = true;
+            handled = true;
         }
         break;
     case 'W':
         if (io.KeyCtrl && io.KeyShift) {
             HandleResetWorkDir();
+            handled = true;
         }
         break;
     case 'Q':
         if (io.KeyCtrl) {
             g_app->app_running = false;
+            handled = true;
         }
         break;
+    }
+
+    if (!handled) {
+        std::string keys = keybind::GetKeysString((char)key, io.KeyCtrl, io.KeyAlt, io.KeyShift);
+        const auto cmd = g_app->user_config.keybinds->GetCommand(keys);
+        if (cmd) {
+            console::Print("Running keybind command for keys: ");
+            console::Print(keys.c_str());
+            console::Print("\n");
+            ProcessKeyBindCommand(*cmd);
+        }
     }
 }
 

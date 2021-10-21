@@ -4,6 +4,7 @@
 #include <array>
 #include <deque>
 #include <set>
+#include "keybind.h"
 
 namespace config {
 
@@ -48,7 +49,6 @@ struct Config
     std::vector<std::string> custom_brush_light_fields;
     std::vector<std::string> custom_light_entities;
     std::vector<std::string> ignore_field_diff;
-
     std::string quake_args;
     std::string selected_preset;
 
@@ -82,15 +82,16 @@ struct ToolPreset
 /// UserConfig gets saved to the application directory
 struct UserConfig
 {
-    std::string                 version;
-    std::set<std::string>       loaded_configs;
-    std::string                 last_import_preset_location;
-    std::string                 last_export_preset_location;
-    std::string                 last_tools_dir;
-    std::string                 last_engine_exe;
-    std::deque<std::string>     recent_configs;
-    std::vector<ToolPreset>     tool_presets;
-    std::string                 selected_config;
+    std::string                   version;
+    std::set<std::string>         loaded_configs;
+    std::string                   last_import_preset_location;
+    std::string                   last_export_preset_location;
+    std::string                   last_tools_dir;
+    std::string                   last_engine_exe;
+    std::deque<std::string>       recent_configs;
+    std::vector<ToolPreset>       tool_presets;
+    std::string                   selected_config;
+    std::unique_ptr<keybind::KeyBindState> keybinds;
 };
 
 static const char* g_config_path_names[] = {
