@@ -108,6 +108,19 @@ static void WriteVar(std::ofstream& fh, const std::string& name, const std::stri
     fh << "\"" << value3 << "\"" << "\n";
 }
 
+static void WriteVar(std::ofstream& fh, const std::string& name, const std::string& value1, const std::string& value2, const std::string& value3,
+    const std::string& value4, const std::string& value5, const std::string& value6)
+{
+    WriteVarName(fh, name);
+    fh << " ";
+    fh << "\"" << value1 << "\"" << " ";
+    fh << "\"" << value2 << "\"" << " ";
+    fh << "\"" << value3 << "\"" << " ";
+    fh << "\"" << value4 << "\"" << " ";
+    fh << "\"" << value5 << "\"" << " ";
+    fh << "\"" << value6 << "\"" << "\n";
+}
+
 static void WriteVar(std::ofstream& fh, const std::string& name, const char* value)
 {
     WriteVar(fh, name, std::string(value));
@@ -552,7 +565,7 @@ void WriteUserConfig(const UserConfig& config)
 
     // write keybinds
     for (const auto& it : config.keybinds->binds) {
-        WriteVar(fh, "keybind", it.first, keybind::GetCommandTypeString(it.second->type), it.second->args[0]);
+        WriteVar(fh, "keybind", it.first, keybind::GetCommandTypeString(it.second->type), it.second->args[0], it.second->args[1], it.second->args[2], it.second->args[3]);
     }
 
     // write tool presets
