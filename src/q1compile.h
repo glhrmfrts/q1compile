@@ -58,6 +58,9 @@ struct OpenConfigState {
 struct OpenRendererState {
     OpenConfigState* source_config;
     bsp::Bsp bsp_data;
+    std::unique_ptr<file_watcher::FileWatcher> bsp_file_watcher;
+    Vec3 cam_position;
+    Vec3 cam_rotation;
 };
 
 struct OpenTabState {
@@ -70,6 +73,11 @@ struct AppState {
     std::vector<std::unique_ptr<OpenTabState>>      open_tabs;
     OpenTabState*                                   current_tab;
     int                                             current_tab_index;
+
+    //std::vector<std::unique_ptr<OpenConfigState>>   open_configs;
+    //OpenConfigState*                                current_config;
+    //int                                             current_config_index;
+
     config::UserConfig                              user_config;
     std::string                                     last_loaded_config_name;
 
@@ -103,12 +111,18 @@ struct AppState {
     void* platform_data = NULL;
 };
 
+extern LPDIRECT3DDEVICE9 g_pd3dDevice;
+
 void qc_init(void* platform_data);
 
 void qc_key_down(unsigned int key);
 
+void qc_mouse_move(unsigned int x, unsigned int y);
+
 void qc_resize(unsigned int width, unsigned int height);
 
 bool qc_render();
+
+void qc_render_bsp();
 
 void qc_deinit();

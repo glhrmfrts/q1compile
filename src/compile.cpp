@@ -248,7 +248,7 @@ struct CompileJob
             }
 
             if (copy_bsp && path::Exists(work_bsp)) {
-                auto bsp_data = bsp::ReadBsp(work_bsp);
+                //auto bsp_data = bsp::ReadBsp(work_bsp);
 
                 if (path::Copy(work_bsp, out_bsp)) {
                     ReportCopy(work_bsp, out_bsp);
@@ -523,7 +523,7 @@ void StartCompileJob(OpenConfigState* cfg, CompileFlags flags)
 
 void StartHelpJob(config::CompileStepType cstype)
 {
-    g_app->compile_queue->AddWork(0, HelpJob{ g_app->current_config, cstype });
+    g_app->compile_queue->AddWork(0, HelpJob{ &g_app->current_tab->open_config, cstype });
 }
 
 void StartShellCommandJob(OpenConfigState* cfg, const std::string& cmd)

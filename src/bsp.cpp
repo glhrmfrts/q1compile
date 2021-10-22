@@ -1,6 +1,7 @@
 #include "bsp.h"
 #include "common.h"
 #include <cstdio>
+#include "path.h"
 
 #define BSP_VERSION 29
 
@@ -36,7 +37,7 @@ static void ReadLumpData(FILE* fh, const Header& header, int lump, std::vector<c
 }
 
 template <typename T>
-static int ReadDataIntoVector(const std::vector<char>& data, std::vector<T>& vec)
+static int ReadDataIntoVector(std::vector<char>& data, std::vector<T>& vec)
 {
     int num_elems = data.size() / sizeof(T);
     for (int i = 0; i < num_elems; i++) {
@@ -46,7 +47,7 @@ static int ReadDataIntoVector(const std::vector<char>& data, std::vector<T>& vec
 }
 
 template <typename T, typename P>
-static int ReadDataIntoVector(const std::vector<char>& data, std::vector<P>& vec, std::function<P(const T&)> fn)
+static int ReadDataIntoVector(std::vector<char>& data, std::vector<P>& vec, std::function<P(const T&)> fn)
 {
     int num_elems = data.size() / sizeof(T);
     for (int i = 0; i < num_elems; i++) {
@@ -73,6 +74,8 @@ std::string Bsp::ReadFromFile(const std::string& path)
     fread(&header, sizeof(header), 1, fh);
 
     auto bsp = this;
+    bsp->filename_hash = std::hash<std::string>{}(path);
+    bsp->modified_time = path::GetFileModifiedTime(path);
     bsp->entities.clear();
     bsp->mip_textures.clear();
     bsp->vertices.clear();
@@ -81,6 +84,11 @@ std::string Bsp::ReadFromFile(const std::string& path)
     bsp->lighting.clear();
     bsp->edges.clear();
     bsp->models.clear();
+    bsp->surf_edges.clear();
+    bsp->nodes.clear();
+    bsp->clip_nodes.clear();
+    bsp->mark_surfaces.clear();
+    bsp->planes.clear();
 
     std::vector<char> data;
     {
@@ -89,11 +97,25 @@ std::string Bsp::ReadFromFile(const std::string& path)
     }
     {
         ReadLumpData(fh, header, LUMP_TEXTURES, data);
-        int number_of_miptextures = *reinterpret_cast<int*>(data.data());
-        int* offsets = reinterpret_cast<int*>(data.data()) + 1;
+        int32_t number_of_miptextures = *reinterpret_cast<int32_t*>(data.data());
+        int32_t* offsets = reinterpret_cast<int32_t*>(data.data()) + 1;
         for (int id = 0; id < number_of_miptextures; id++) {
             int offset = offsets[id];
-            Miptexture miptex = *reinterpret_cast<Miptexture*>(data.data() + offset);
+            if (offset == -1) { 
+                bsp->mip_textures.push_back(Miptexture{});
+                continue;
+            }
+
+            MiptextureData* miptex_data = reinterpret_cast<MiptextureData*>(data.data() + offset);
+            uint8_t* pixels = reinterpret_cast<uint8_t*>(miptex_data + 1);
+            int pixels_size = miptex_data->width * miptex_data->height * 85 / 64;
+
+            Miptexture miptex = {};
+            miptex.data = *miptex_data;
+            for (int i = 0; i < pixels_size; i++) {
+                miptex.pixels.push_back(*pixels++);
+            }
+
             bsp->mip_textures.push_back(miptex);
         }
     }
@@ -115,6 +137,7 @@ std::string Bsp::ReadFromFile(const std::string& path)
                 f.plane_number = (int)face.planenum;
                 f.side = (int)face.side;
                 f.tex_info = (int)face.texinfo;
+                f.light_ofs = face.lightofs;
                 return f;
             });
         }
@@ -123,22 +146,34 @@ std::string Bsp::ReadFromFile(const std::string& path)
         }
     }
     {
+        // TODO: support .lit files
+
+        std::vector<uint8_t> raw_lighting;
+
         ReadLumpData(fh, header, LUMP_LIGHTING, data);
-        ReadDataIntoVector(data, bsp->lighting);
+        ReadDataIntoVector(data, raw_lighting);
+
+        for (auto i : raw_lighting) { bsp->lighting.push_back(RGB8{ i, i, i }); }
+
+        lightmap_shift = 4;
     }
     {
         ReadLumpData(fh, header, LUMP_EDGES, data);
         if (!is_bsp2) {
             ReadDataIntoVector<Edge29, Edge>(data, bsp->edges, [](const Edge29& edge) -> Edge {
                 Edge e = {};
-                e.v[0] = (unsigned int)edge.v[0];
-                e.v[1] = (unsigned int)edge.v[1];
+                e.v[0] = (uint32_t)edge.v[0];
+                e.v[1] = (uint32_t)edge.v[1];
                 return e;
             });
         }
         else {
             ReadDataIntoVector(data, bsp->edges);
         }
+    }
+    {
+        ReadLumpData(fh, header, LUMP_SURFEDGES, data);
+        ReadDataIntoVector(data, bsp->surf_edges);
     }
     {
         ReadLumpData(fh, header, LUMP_MODELS, data);

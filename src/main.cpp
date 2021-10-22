@@ -148,8 +148,10 @@ int __stdcall WinMain(
         g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
         if (g_pd3dDevice->BeginScene() >= 0)
         {
-            ImGui::Render();
-            ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+            qc_render_bsp();
+            
+            //ImGui::Render();
+            //ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
             g_pd3dDevice->EndScene();
         }
         HRESULT result = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
@@ -236,6 +238,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         qc_key_down(wParam);
+        return 0;
+    case WM_MOUSEMOVE:
+        qc_mouse_move((UINT)LOWORD(lParam), (UINT)HIWORD(lParam));
         return 0;
     case WM_DESTROY:
         ::PostQuitMessage(0);

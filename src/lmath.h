@@ -1,44 +1,29 @@
 #pragma once
 
-struct Vec2
-{
-    static constexpr bool IsVecType = true;
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/matrix.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-    float x,y;
+using Vec2 = glm::vec2;
+using Vec3 = glm::vec3;
+
+struct RGB8
+{
+    uint8_t r, g, b;
 };
 
-struct Vec3
+struct RGBA8
 {
-    static constexpr bool IsVecType = true;
-
-    float x,y,z;
-
-    inline Vec3 operator -(const Vec3& other) const
-    {
-        return {x - other.x, y - other.y, z - other.z};
-    }
-
-    inline bool operator ==(const Vec3& other) const
-    {
-        return x == other.x && y == other.y && z == other.z;
-    }
-
-    inline bool operator !=(const Vec3& other) const
-    {
-        return !(*this == other);
-    }
+    uint8_t r, g, b, a;
 };
 
-template <typename T>
-inline float Dot(const T& a, const T& b)
+struct RGB32
 {
-    static_assert(T::IsVecType, "Not a vector type");
-    return 0.0f;
-}
+    uint32_t r, g, b;
+};
 
-template <typename T>
-inline T Cross(const T& a, const T& b)
+struct RGBA32
 {
-    static_assert(T::IsVecType, "Not a vector type");
-    return 0.0f;
-}
+    uint32_t r, g, b, a;
+};

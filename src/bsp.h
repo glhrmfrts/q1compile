@@ -70,13 +70,13 @@ namespace bsp {
 
 struct Lump
 {
-    unsigned int file_offset;
-    unsigned int file_length;
+    uint32_t    file_offset;
+    uint32_t    file_length;
 };
 
 struct Header
 {
-    int version;
+    int32_t version;
     Lump lumps[HEADER_LUMPS];
 };
 
@@ -84,17 +84,17 @@ struct Model
 {
     float		mins[3], maxs[3];
     float		origin[3];
-    int			head_node[MAX_MAP_HULLS];
-    int			vis_leafs; // not including the solid leaf 0
-    int			first_face;
-    int         num_faces;
+    int32_t     head_node[MAX_MAP_HULLS];
+    int32_t     vis_leafs; // not including the solid leaf 0
+    uint32_t    first_face;
+    uint32_t    num_faces;
 };
 
 struct Plane
 {
     Vec3 normal;
     float distance;
-    int type;
+    int32_t type;
 };
 
 struct Vertex
@@ -104,81 +104,86 @@ struct Vertex
 
 struct Node
 {
-    int plane_number;
-    int children[2];
+    int32_t plane_number;
+    int32_t children[2];
 
     float bounding_box_min[3];
     float bounding_box_max[3];
 
-    unsigned int first_face;
-    unsigned int num_faces;
+    uint32_t first_face;
+    uint32_t num_faces;
 };
 
 struct ClipNode
 {
-    int			plane_num;
-    int		    children[2];	// negative numbers are contents
+    int32_t			plane_num;
+    int32_t		    children[2];	// negative numbers are contents
 };
 
 struct Edge
 {
-    unsigned int v[2];
+    uint32_t v[2];
 };
 
 struct Edge29
 {
-    unsigned short v[2];
+    uint16_t v[2];
 };
 
 struct Face
 {
-    int		    plane_number;
-    int		    side;
+    uint32_t		plane_number;
+    int32_t         side;
 
-    int			first_edge;		// we must support > 64k edges
-    int		    num_edges;
-    int		    tex_info;
+    uint32_t    first_edge;		// we must support > 64k edges
+    uint32_t    num_edges;
+    uint32_t    tex_info;
 
     // lighting info
     char		styles[4];
-    int			light_ofs;		// start of [numstyles*surfsize] samples
+    int32_t     light_ofs;		// start of [numstyles*surfsize] samples
 };
 
 struct Face29
 {
-    short		planenum;
-	short		side;
+    uint16_t		planenum;
+    int16_t         side;
 
-	int			firstedge;		// we must support > 64k edges
-	short		numedges;
-	short		texinfo;
+	uint32_t    firstedge;		// we must support > 64k edges
+	uint16_t    numedges;
+	uint16_t    texinfo;
 
 // lighting info
 	char		styles[4];
-	int			lightofs;		// start of [numstyles*surfsize] samples
+	int32_t		lightofs;		// start of [numstyles*surfsize] samples
 };
 
 struct Leaf
 {
-    int			contents;
-    int			vis_ofs;				// -1 = no visibility info
+    int32_t     contents;
+    int32_t     vis_ofs;				// -1 = no visibility info
 
     float		mins[3];			// for frustum culling
     float		maxs[3];
 
-    unsigned int		first_mark_surface;
-    unsigned int		num_mark_surfaces;
+    uint32_t		first_mark_surface;
+    uint32_t		num_mark_surfaces;
 
     char		        ambient_level[NUM_AMBIENTS];
 };
 
-struct Miptexture
+struct MiptextureData
 {
     char name[16];
-    int width;
-    int height;
-    int offsets[4];
-    std::vector<int> pixels;
+    uint32_t width;
+    uint32_t height;
+    uint32_t offsets[4];
+};
+
+struct Miptexture
+{
+    MiptextureData data;
+    std::vector<uint8_t> pixels;
 };
 
 struct TextureInfo
@@ -187,32 +192,32 @@ struct TextureInfo
     float s_offset;
     Vec3 t;
     float t_offset;
-    int miptexture_number;
-    int flags;
+    uint32_t miptexture_number;
+    uint32_t flags;
 };
 
 struct Bsp
 {
     std::atomic_bool updating_data;
     size_t filename_hash;
-    unsigned int modified_time;
+    uint32_t modified_time;
     std::string filename;
     std::string version;
     std::string entities;
-
+    int32_t lightmap_shift;
     std::vector<Plane> planes;
     std::vector<Miptexture> mip_textures;
     std::vector<Vertex> vertices;
-    std::vector<int> visibilites;
+    std::vector<int32_t> visibilites;
     std::vector<Node> nodes;
     std::vector<TextureInfo> tex_infos;
     std::vector<Face> faces;
-    std::vector<int> lighting;
+    std::vector<RGB8> lighting;
     std::vector<ClipNode> clip_nodes;
     std::vector<Leaf> leafs;
-    std::vector<int> mark_surfaces;
+    std::vector<int32_t> mark_surfaces;
     std::vector<Edge> edges;
-    std::vector<int> surf_edges;
+    std::vector<int32_t> surf_edges;
     std::vector<Model> models;
 
     std::string ReadFromFile(const std::string& path);

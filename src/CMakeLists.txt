@@ -11,6 +11,7 @@ file (GLOB HEADER_FILES *.h)
 add_executable (${TARGET_NAME} ${SOURCE_FILES} ${HEADER_FILES})
 
 include_directories(.)
+include_directories(../include)
 include_directories(../include/imgui)
 include_directories(../include/imgui/examples)
 include_directories(../include/imgui-filebrowser)
