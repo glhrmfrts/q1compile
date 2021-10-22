@@ -218,6 +218,8 @@ void BspRenderer::Render(const Vec3& cam_pos, const Vec3& cam_rot)
         g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);   //Ignored
 
         g_pd3dDevice->SetTexture(1, lm.texture);
+        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
         g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_MODULATE);
         g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG2, D3DTA_CURRENT);
@@ -410,7 +412,7 @@ BspRenderer* Renderer::GetOrCreateBspRenderer(const bsp::Bsp& bsp)
                     constexpr int MAXLIGHTMAPS = 1; // TODO: support 16 lightmaps
                     constexpr uint8_t INVALID_LIGHTSTYLE = 0xff;
 
-                    std::array<RGB32, LMBLOCK_WIDTH* LMBLOCK_HEIGHT> blocklights;
+                    std::array<RGB32, LMBLOCK_WIDTH * LMBLOCK_HEIGHT> blocklights;
                     memset(blocklights.data(), 0, sizeof(blocklights));
 
                     for (int maps = 0; maps < MAXLIGHTMAPS && face.styles[maps] != INVALID_LIGHTSTYLE; maps++) {
