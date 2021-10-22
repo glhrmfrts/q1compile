@@ -37,54 +37,48 @@ struct Image
 {
     uint32_t width, height;
     std::vector<RGBA8> pixels; // Assuming RGBA for now
-    IDirect3DTexture9* texture;
 };
 
 struct Lightmap
 {
     std::array<RGBA8, LMBLOCK_WIDTH * LMBLOCK_HEIGHT> data;
-    IDirect3DTexture9* texture;
-};
-
-struct Surface
-{
-    bsp::Face* source_face;
-    int extents[2];
-    int texture_mins[2];
-    float mins[2];
-    float maxs[2];
 };
 
 struct BspRenderer
 {
     size_t filename_hash;
     unsigned int modified_time;
-
-    std::vector<Surface> surfaces;
+    std::atomic_bool gpu_data_needs_update = false;
 
     std::vector<Vertex> vertices;
     std::vector<Triangle> triangles;
     std::vector<Image> images;
 
-    // key = texture_id | (lightmap_id << 16)
-    std::unordered_map<int32_t, std::vector<DrawCall>> draw_calls;
-
     std::vector<Lightmap> lightmaps;
     int last_lightmap_allocated;
     int lightmap_allocated[LMBLOCK_WIDTH];
 
+    // key = texture_id | (lightmap_id << 16)
+    std::unordered_map<int32_t, std::vector<DrawCall>> draw_calls;
+
     IDirect3DVertexBuffer9* vertex_buffer;
     IDirect3DIndexBuffer9* index_buffer;
+    std::vector<IDirect3DTexture9*> textures;
+    std::vector<IDirect3DTexture9*> lightmap_textures;
 
-    ~BspRenderer() { Destroy(); }
+    ~BspRenderer() { ReleaseMemory(); ReleaseGpuData(); }
 
-    bool UploadData();
+    void SetBspData(const bsp::Bsp& bsp_data);
 
     std::tuple<int, int, int> CreateLightmap(int w, int h);
 
     void Render(const Vec3& cam_pos, const Vec3& cam_rot);
 
-    void Destroy();
+    void ReleaseMemory();
+
+    bool UploadGpuData();
+
+    void ReleaseGpuData();
 };
 
 struct Renderer

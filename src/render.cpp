@@ -75,207 +75,13 @@ std::tuple<int, int, int> BspRenderer::CreateLightmap(int w, int h)
     return { texnum, x, y };
 }
 
-bool BspRenderer::UploadData()
+void BspRenderer::SetBspData(const bsp::Bsp& bsp)
 {
-    // Upload vertices
-    {
-        unsigned int size = vertices.size() * sizeof(Vertex);
-        if (FAILED(g_pd3dDevice->CreateVertexBuffer(size, D3DUSAGE_WRITEONLY, g_vertex_fvf, D3DPOOL_DEFAULT, &vertex_buffer, NULL))) {
-            return false;
-        }
+    ReleaseMemory();
 
-        void* data;
-        if (FAILED(vertex_buffer->Lock(0, size, &data, 0))) {
-            return false;
-        }
-        memcpy(data, vertices.data(), size);
-        vertex_buffer->Unlock();
-    }
-
-    // Upload indices
-    {
-        unsigned int size = triangles.size() * sizeof(Triangle);
-        if (FAILED(g_pd3dDevice->CreateIndexBuffer(size, D3DUSAGE_WRITEONLY, D3DFMT_INDEX32, D3DPOOL_DEFAULT, &index_buffer, NULL))) {
-            return false;
-        }
-
-        void* data;
-        if (FAILED(index_buffer->Lock(0, size, &data, 0))) {
-            return false;
-        }
-        memcpy(data, (unsigned int*)triangles.data(), size);
-        index_buffer->Unlock();
-    }
-
-    // Upload textures
-    for (auto& image : images) {
-        if (image.width == 0 || image.height == 0) { continue; }
-
-        HRESULT hr = g_pd3dDevice->CreateTexture(image.width, image.height, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &image.texture, NULL);
-        if (FAILED(hr)) {
-            return false;
-        }
-
-        D3DLOCKED_RECT locked_rect;
-        RECT rect;
-        rect.right = image.width;
-        rect.bottom = image.height;
-        rect.top = 0;
-        rect.left = 0;
-        if (FAILED(image.texture->LockRect(0, &locked_rect, &rect, 0))) {
-            return false;
-        }
-        for (unsigned int y = 0; y < image.height; y++) {
-            unsigned char* dest = (unsigned char*)locked_rect.pBits + (y * locked_rect.Pitch);
-            for (unsigned int x = 0; x < image.width; x++) {
-                unsigned int idx = y * image.width + x;
-                const auto& pix = image.pixels.at(idx);
-
-                // TODO: wtf? I asked for ARGB
-
-                *dest++ = pix.b;
-                *dest++ = pix.g;
-                *dest++ = pix.r;
-                *dest++ = pix.a;
-            }
-        }
-        image.texture->UnlockRect(0);
-    }
-
-    // Upload lightmaps
-    for (auto& lm : lightmaps) {
-        HRESULT hr = g_pd3dDevice->CreateTexture(LMBLOCK_WIDTH, LMBLOCK_HEIGHT, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &lm.texture, NULL);
-        if (FAILED(hr)) {
-            return false;
-        }
-
-        D3DLOCKED_RECT locked_rect;
-        RECT rect;
-        rect.right = LMBLOCK_WIDTH;
-        rect.bottom = LMBLOCK_HEIGHT;
-        rect.top = 0;
-        rect.left = 0;
-        if (FAILED(lm.texture->LockRect(0, &locked_rect, &rect, 0))) {
-            return false;
-        }
-        for (unsigned int y = 0; y < LMBLOCK_HEIGHT; y++) {
-            unsigned char* dest = (unsigned char*)locked_rect.pBits + (y * locked_rect.Pitch);
-            for (unsigned int x = 0; x < LMBLOCK_WIDTH; x++) {
-                unsigned int idx = y * LMBLOCK_WIDTH + x;
-                const auto& pix = lm.data.at(idx);
-
-                // TODO: wtf? I asked for ARGB
-
-                *dest++ = pix.b;
-                *dest++ = pix.g;
-                *dest++ = pix.r;
-                *dest++ = pix.a;
-            }
-        }
-        lm.texture->UnlockRect(0);
-    }
-
-    return true;
-}
-
-void BspRenderer::Render(const Vec3& cam_pos, const Vec3& cam_rot)
-{
-    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-
-    Vec3 target_pos = cam_pos + cam_rot * 100.f;// { -100.0f, 0.0f, 50.0f };
-    auto projection = glm::perspective(glm::radians(80.0f), 1280.0f / 760.0f, 0.1f, 2000.0f);
-    auto view = glm::lookAt(cam_pos, target_pos, Vec3{ 0.0f, 0.0f, 1.0f });
-    
-    static D3DMATRIX world_matrix = { { { 1.0f, 0.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f, 0.0f,  0.0f, 0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f } } };
-    
-    D3DMATRIX projection_matrix;
-    D3DMATRIX view_matrix;
-    memcpy(&projection_matrix, &projection, sizeof(D3DMATRIX));
-    memcpy(&view_matrix, &view, sizeof(D3DMATRIX));
-
-    g_pd3dDevice->SetTransform(D3DTS_PROJECTION, &projection_matrix);
-    g_pd3dDevice->SetTransform(D3DTS_VIEW, &view_matrix);
-    g_pd3dDevice->SetTransform(D3DTS_WORLD, &world_matrix);
-
-    g_pd3dDevice->SetStreamSource(0, vertex_buffer, 0, sizeof(Vertex));
-    g_pd3dDevice->SetIndices(index_buffer);
-    g_pd3dDevice->SetFVF(g_vertex_fvf);
-
-    for (const auto& it : draw_calls) {
-        int texture_id = it.first & 0xFFFF;
-        int lightmap_id = it.first >> 16 & 0xFFFF;
-        const auto& dcs = it.second;
-        if (dcs.empty()) { continue; }
-
-        auto& image = images[texture_id];
-        if (image.width == 0 || image.height == 0) { continue; }
-
-        auto& lm = lightmaps[lightmap_id];
-
-        g_pd3dDevice->SetTexture(0, image.texture);
-        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);   //Ignored
-
-        g_pd3dDevice->SetTexture(1, lm.texture);
-        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_MODULATE);
-        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG2, D3DTA_CURRENT);
-
-        for (const auto& dc : dcs) {
-            HRESULT hr = g_pd3dDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, dc.num_tris * 3, dc.start_tri * 3, dc.num_tris);
-            if (FAILED(hr)) {
-                continue;
-            }
-        }
-    }
-}
-
-void BspRenderer::Destroy()
-{
-    for (auto& image : images) {
-        if (image.texture) { image.texture->Release(); }
-    }
-    for (auto& lm : lightmaps) {
-        if (lm.texture) { lm.texture->Release(); }
-    }
-    images.clear();
-    lightmaps.clear();
-    draw_calls.clear();
-    vertices.clear();
-    triangles.clear();
-    last_lightmap_allocated = 0;
-    memset(lightmap_allocated, 0, sizeof(lightmap_allocated));
-    index_buffer->Release();
-    vertex_buffer->Release();
-}
-
-BspRenderer* Renderer::GetOrCreateBspRenderer(const bsp::Bsp& bsp)
-{
-    static bool inited = false;
-    static BspRenderer sbr;
-    BspRenderer* br = &sbr;
-
-    if (inited) { 
-        if (!(br->modified_time != bsp.modified_time)) {
-            return br;
-        }
-        else {
-            br->Destroy();
-        }
-    }
-    inited = true;
-
+    auto br = this;
     br->filename_hash = bsp.filename_hash;
     br->modified_time = bsp.modified_time;
-
-    /*
-    if (br->filename_hash == bsp.filename_hash && br->modified_time == bsp.modified_time) {
-        return br.get();
-    }
-    */
 
     // Code mainly converted from: https://github.com/joshuaskelly/vgio/blob/master/vgio/quake/bsp/bsp29.py
 
@@ -496,11 +302,222 @@ BspRenderer* Renderer::GetOrCreateBspRenderer(const bsp::Bsp& bsp)
         }
     }
 
-    if (!br->UploadData()) {
-        return nullptr;
+    gpu_data_needs_update = true;
+}
+
+bool BspRenderer::UploadGpuData()
+{
+    // Upload vertices
+    {
+        unsigned int size = vertices.size() * sizeof(Vertex);
+        if (FAILED(g_pd3dDevice->CreateVertexBuffer(size, D3DUSAGE_WRITEONLY, g_vertex_fvf, D3DPOOL_DEFAULT, &vertex_buffer, NULL))) {
+            return false;
+        }
+
+        void* data;
+        if (FAILED(vertex_buffer->Lock(0, size, &data, 0))) {
+            return false;
+        }
+        memcpy(data, vertices.data(), size);
+        vertex_buffer->Unlock();
     }
 
-    return br;
+    // Upload indices
+    {
+        unsigned int size = triangles.size() * sizeof(Triangle);
+        if (FAILED(g_pd3dDevice->CreateIndexBuffer(size, D3DUSAGE_WRITEONLY, D3DFMT_INDEX32, D3DPOOL_DEFAULT, &index_buffer, NULL))) {
+            return false;
+        }
+
+        void* data;
+        if (FAILED(index_buffer->Lock(0, size, &data, 0))) {
+            return false;
+        }
+        memcpy(data, (unsigned int*)triangles.data(), size);
+        index_buffer->Unlock();
+    }
+
+    // Upload textures
+    for (auto& image : images) {
+        if (image.width == 0 || image.height == 0) { 
+            textures.push_back(nullptr);
+            continue;
+        }
+
+        IDirect3DTexture9* texture = nullptr;
+        HRESULT hr = g_pd3dDevice->CreateTexture(image.width, image.height, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &texture, NULL);
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        D3DLOCKED_RECT locked_rect;
+        RECT rect;
+        rect.right = image.width;
+        rect.bottom = image.height;
+        rect.top = 0;
+        rect.left = 0;
+        if (FAILED(texture->LockRect(0, &locked_rect, &rect, 0))) {
+            return false;
+        }
+        for (unsigned int y = 0; y < image.height; y++) {
+            unsigned char* dest = (unsigned char*)locked_rect.pBits + (y * locked_rect.Pitch);
+            for (unsigned int x = 0; x < image.width; x++) {
+                unsigned int idx = y * image.width + x;
+                const auto& pix = image.pixels.at(idx);
+
+                // TODO: wtf? I asked for ARGB
+
+                *dest++ = pix.b;
+                *dest++ = pix.g;
+                *dest++ = pix.r;
+                *dest++ = pix.a;
+            }
+        }
+        texture->UnlockRect(0);
+        textures.push_back(texture);
+    }
+
+    // Upload lightmaps
+    for (auto& lm : lightmaps) {
+        IDirect3DTexture9* texture = nullptr;
+        HRESULT hr = g_pd3dDevice->CreateTexture(LMBLOCK_WIDTH, LMBLOCK_HEIGHT, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &texture, NULL);
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        D3DLOCKED_RECT locked_rect;
+        RECT rect;
+        rect.right = LMBLOCK_WIDTH;
+        rect.bottom = LMBLOCK_HEIGHT;
+        rect.top = 0;
+        rect.left = 0;
+        if (FAILED(texture->LockRect(0, &locked_rect, &rect, 0))) {
+            return false;
+        }
+        for (unsigned int y = 0; y < LMBLOCK_HEIGHT; y++) {
+            unsigned char* dest = (unsigned char*)locked_rect.pBits + (y * locked_rect.Pitch);
+            for (unsigned int x = 0; x < LMBLOCK_WIDTH; x++) {
+                unsigned int idx = y * LMBLOCK_WIDTH + x;
+                const auto& pix = lm.data.at(idx);
+
+                // TODO: wtf? I asked for ARGB
+
+                *dest++ = pix.b;
+                *dest++ = pix.g;
+                *dest++ = pix.r;
+                *dest++ = pix.a;
+            }
+        }
+        texture->UnlockRect(0);
+        lightmap_textures.push_back(texture);
+    }
+
+    return true;
+}
+
+void BspRenderer::Render(const Vec3& cam_pos, const Vec3& cam_rot)
+{
+    if (gpu_data_needs_update) {
+        ReleaseGpuData();
+        if (!UploadGpuData()) {
+            return;
+        }
+        gpu_data_needs_update = false;
+    }
+
+    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
+
+    Vec3 target_pos = cam_pos + cam_rot * 100.f;// { -100.0f, 0.0f, 50.0f };
+    auto projection = glm::perspective(glm::radians(80.0f), 1280.0f / 760.0f, 0.1f, 2000.0f);
+    auto view = glm::lookAt(cam_pos, target_pos, Vec3{ 0.0f, 0.0f, 1.0f });
+    
+    static D3DMATRIX world_matrix = { { { 1.0f, 0.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f, 0.0f,  0.0f, 0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f } } };
+    
+    D3DMATRIX projection_matrix;
+    D3DMATRIX view_matrix;
+    memcpy(&projection_matrix, &projection, sizeof(D3DMATRIX));
+    memcpy(&view_matrix, &view, sizeof(D3DMATRIX));
+
+    g_pd3dDevice->SetTransform(D3DTS_PROJECTION, &projection_matrix);
+    g_pd3dDevice->SetTransform(D3DTS_VIEW, &view_matrix);
+    g_pd3dDevice->SetTransform(D3DTS_WORLD, &world_matrix);
+
+    g_pd3dDevice->SetStreamSource(0, vertex_buffer, 0, sizeof(Vertex));
+    g_pd3dDevice->SetIndices(index_buffer);
+    g_pd3dDevice->SetFVF(g_vertex_fvf);
+
+    for (const auto& it : draw_calls) {
+        int texture_id = it.first & 0xFFFF;
+        int lightmap_id = it.first >> 16 & 0xFFFF;
+        const auto& dcs = it.second;
+        if (dcs.empty()) { continue; }
+
+        auto tex = textures[texture_id];
+        if (!tex) { continue; }
+
+        auto lmtex = lightmap_textures[lightmap_id];
+
+        g_pd3dDevice->SetTexture(0, tex);
+        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+        g_pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);   //Ignored
+
+        g_pd3dDevice->SetTexture(1, lmtex);
+        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+        g_pd3dDevice->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_MODULATE);
+        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+        g_pd3dDevice->SetTextureStageState(1, D3DTSS_COLORARG2, D3DTA_CURRENT);
+
+        for (const auto& dc : dcs) {
+            HRESULT hr = g_pd3dDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, dc.num_tris * 3, dc.start_tri * 3, dc.num_tris);
+            if (FAILED(hr)) {
+                continue;
+            }
+        }
+    }
+}
+
+void BspRenderer::ReleaseMemory()
+{
+    images.clear();
+    lightmaps.clear();
+    draw_calls.clear();
+    vertices.clear();
+    triangles.clear();
+    last_lightmap_allocated = 0;
+    memset(lightmap_allocated, 0, sizeof(lightmap_allocated));
+}
+
+void BspRenderer::ReleaseGpuData()
+{
+    if (index_buffer) { index_buffer->Release(); }
+    if (vertex_buffer) { vertex_buffer->Release(); }
+    for (auto& t : textures) {
+        if (t) { t->Release(); }
+    }
+    for (auto& t : lightmap_textures) {
+        if (t) { t->Release(); }
+    }
+    textures.clear();
+    lightmap_textures.clear();
+}
+
+BspRenderer* Renderer::GetOrCreateBspRenderer(const bsp::Bsp& bsp)
+{
+    for (auto& br : bsp_renderers) {
+        if (br->filename_hash == bsp.filename_hash) {
+            if (br->modified_time != bsp.modified_time) {
+                br->SetBspData(bsp);
+            }
+            return br.get();
+        }
+    }
+
+    auto newbr = std::make_unique<BspRenderer>();
+    newbr->SetBspData(bsp);
+    bsp_renderers.push_back(std::move(newbr));
+    return bsp_renderers.back().get();
 }
 
 void Renderer::RenderBsp(const Vec3& cam_pos, const Vec3& cam_rot, const bsp::Bsp& bsp)
