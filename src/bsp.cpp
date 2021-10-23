@@ -29,25 +29,31 @@ static bool IsBsp2File(FILE* fh)
     return !memcmp(version, "BSP2", sizeof(version));
 }
 
-static void ReadLumpData(FILE* fh, const Header& header, int lump, std::vector<char>& data)
+static void ReadLumpData(FILE* fh, const Header& header, int lump, std::vector<uint8_t>& data)
 {
     data.resize(header.lumps[lump].file_length);
     fseek(fh, header.lumps[lump].file_offset, SEEK_SET);
-    fread(data.data(), sizeof(char), data.size(), fh);
+    fread(data.data(), sizeof(uint8_t), data.size(), fh);
 }
 
 template <typename T>
-static int ReadDataIntoVector(std::vector<char>& data, std::vector<T>& vec)
+static int ReadDataIntoVector(uint8_t* data, size_t size, std::vector<T>& vec)
 {
-    int num_elems = data.size() / sizeof(T);
+    int num_elems = size / sizeof(T);
     for (int i = 0; i < num_elems; i++) {
-        vec.push_back(*reinterpret_cast<T*>(data.data() + (i*sizeof(T))));
+        vec.push_back(*reinterpret_cast<T*>(data + (i * sizeof(T))));
     }
     return num_elems;
 }
 
+template <typename T>
+static int ReadDataIntoVector(std::vector<uint8_t>& data, std::vector<T>& vec)
+{
+    return ReadDataIntoVector(data.data(), data.size(), vec);
+}
+
 template <typename T, typename P>
-static int ReadDataIntoVector(std::vector<char>& data, std::vector<P>& vec, std::function<P(const T&)> fn)
+static int ReadDataIntoVector(std::vector<uint8_t>& data, std::vector<P>& vec, std::function<P(const T&)> fn)
 {
     int num_elems = data.size() / sizeof(T);
     for (int i = 0; i < num_elems; i++) {
@@ -74,6 +80,7 @@ std::string Bsp::ReadFromFile(const std::string& path)
     fread(&header, sizeof(header), 1, fh);
 
     auto bsp = this;
+    bsp->filename = path;
     bsp->filename_hash = std::hash<std::string>{}(path);
     bsp->modified_time = path::GetFileModifiedTime(path);
     bsp->entities.clear();
@@ -90,10 +97,10 @@ std::string Bsp::ReadFromFile(const std::string& path)
     bsp->mark_surfaces.clear();
     bsp->planes.clear();
 
-    std::vector<char> data;
+    std::vector<uint8_t> data;
     {
         ReadLumpData(fh, header, LUMP_ENTITIES, data);
-        bsp->entities = std::string(data.data(), data.size());
+        bsp->entities = std::string((const char*)data.data(), data.size());
     }
     {
         ReadLumpData(fh, header, LUMP_TEXTURES, data);
@@ -138,6 +145,7 @@ std::string Bsp::ReadFromFile(const std::string& path)
                 f.side = (int)face.side;
                 f.tex_info = (int)face.texinfo;
                 f.light_ofs = face.lightofs;
+                memcpy(f.styles, face.styles, sizeof(f.styles));
                 return f;
             });
         }
@@ -153,7 +161,27 @@ std::string Bsp::ReadFromFile(const std::string& path)
         ReadLumpData(fh, header, LUMP_LIGHTING, data);
         ReadDataIntoVector(data, raw_lighting);
 
-        for (auto i : raw_lighting) { bsp->lighting.push_back(RGB8{ i, i, i }); }
+        std::string lit_filename = filename;
+        while (common::StrReplace(lit_filename, ".bsp", ".lit"));
+
+        bool has_lit_data = false;
+        if (path::Exists(lit_filename)) {
+            std::vector<uint8_t> lit_data;
+            path::ReadFileBytes(lit_filename, lit_data);
+            if (!memcmp(lit_data.data(), "QLIT", 4)) {
+                int32_t version = *(reinterpret_cast<int32_t*>(lit_data.data()) + 1);
+                if (version == 1) {
+                    if (header.lumps[LUMP_LIGHTING].file_length * 3 == lit_data.size() - sizeof(int32_t)*2) {
+                        ReadDataIntoVector(lit_data.data()+sizeof(int32_t)*2, lit_data.size() - sizeof(int32_t) * 2, bsp->lighting);
+                        has_lit_data = true;
+                    }
+                }
+            }
+        }
+
+        if (!has_lit_data) {
+            for (auto i : raw_lighting) { bsp->lighting.push_back(RGB8{ i, i, i }); }
+        }
 
         lightmap_shift = 4;
     }

@@ -200,8 +200,7 @@ void BspRenderer::SetBspData(const bsp::Bsp& bsp)
                     sextents[bi] = (bmaxs[bi] - bmins[bi]) * lmscale;
 
                     constexpr int TEX_SPECIAL = 1;
-                    if (!(tinfo.flags & TEX_SPECIAL) && sextents[bi] > maxextent) //johnfitz -- was 512 in glquake, 256 in winquake
-                    {
+                    if (!(tinfo.flags & TEX_SPECIAL) && sextents[bi] > maxextent) {
                         sextents[bi] = 1;
                     }
                 }
@@ -215,13 +214,20 @@ void BspRenderer::SetBspData(const bsp::Bsp& bsp)
                     int size = smax * tmax;
                     const RGB8* samples = bsp.lighting.data() + face.light_ofs;
 
-                    constexpr int MAXLIGHTMAPS = 1; // TODO: support 16 lightmaps
-                    constexpr uint8_t INVALID_LIGHTSTYLE = 0xff;
+                    constexpr int MAXLIGHTSTYLES = 4; // TODO: support 16 styles
+                    constexpr int8_t INVALID_LIGHTSTYLE = -1;
 
-                    std::array<RGB32, LMBLOCK_WIDTH * LMBLOCK_HEIGHT> blocklights;
-                    memset(blocklights.data(), 0, sizeof(blocklights));
+                    std::array<RGB32, LMBLOCK_WIDTH * LMBLOCK_HEIGHT> blocklights = {};
 
-                    for (int maps = 0; maps < MAXLIGHTMAPS && face.styles[maps] != INVALID_LIGHTSTYLE; maps++) {
+                    for (int maps = 0; maps < MAXLIGHTSTYLES; maps++) {
+                        if (face.styles[maps] == INVALID_LIGHTSTYLE) { 
+                            break;
+                        }
+                        if (maps != 0) {
+                            maps++;
+                            maps--;
+                        }
+
                         uint32_t scale = 264;
                         RGB32* bl = blocklights.data();
 
@@ -243,10 +249,8 @@ void BspRenderer::SetBspData(const bsp::Bsp& bsp)
 
                     int stride = LMBLOCK_WIDTH - smax;
 
-                    for (int li = 0; li < tmax; li++, dest += stride)
-                    {
-                        for (int lj = 0; lj < smax; lj++)
-                        {
+                    for (int li = 0; li < tmax; li++, dest += stride) {
+                        for (int lj = 0; lj < smax; lj++) {
                             uint32_t r = (uint32_t)bl->r;
                             uint32_t g = (uint32_t)bl->g;
                             uint32_t b = (uint32_t)bl->b;

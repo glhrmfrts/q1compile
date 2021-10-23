@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace path {
 
@@ -37,6 +38,8 @@ bool Copy(const std::string& from, const std::string& to);
 bool Create(const std::string& path);
 
 bool Remove(const std::string& path);
+
+bool ReadFileBytes(const std::string& path, std::vector<uint8_t>& bytes);
 
 bool ReadFileText(const std::string& path, std::string& str);
 

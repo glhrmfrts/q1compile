@@ -283,6 +283,24 @@ static std::size_t GetFileSize(std::FILE* const fh)
     return size;
 }
 
+bool ReadFileBytes(const std::string& path, std::vector<uint8_t>& bytes)
+{
+    std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
+    if (!fh) {
+        console::PrintError("ReadFileBytes: can't open ");
+        console::PrintError(path.c_str());
+        console::PrintError("\n");
+        return false;
+    }
+    common::ScopeGuard fh_close{ [fh]() { std::fclose(fh); } };
+
+    std::size_t size = GetFileSize(fh);
+    bytes.resize(size);
+
+    std::size_t read = std::fread(bytes.data(), sizeof(uint8_t), size, fh);
+    return read == size;
+}
+
 bool ReadFileText(const std::string& path, std::string& str)
 {
     std::FILE* const fh = _wfopen(Widen(path).c_str(), L"r");
