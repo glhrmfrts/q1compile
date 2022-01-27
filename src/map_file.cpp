@@ -197,6 +197,13 @@ MapFile::MapFile(const std::string& path)
 
     MapFileParser parser{ _text };
     _entities = std::move(parser._entities);
+
+    // look for layer entities
+    for (auto& ent : _entities) {
+        if (ent.fields["classname"] == "func_group" && ent.fields["_tb_type"] == "_tb_layer") {
+            _layers.push_back(MapLayer{std::string{ent.fields["_tb_name"]}, std::string{ent.fields["_tb_id"]}});
+        }
+    }
 }
 
 std::string MapFile::GetTBMod() const {

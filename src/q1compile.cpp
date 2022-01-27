@@ -1324,6 +1324,93 @@ static bool DrawFileInput(const char* label, config::ConfigPath path, float spac
     return changed;
 }
 
+static void DrawMapOptions()
+{
+    float offs = -15.0f;
+    if (DrawFileInput("Map Source:", config::PATH_MAP_SOURCE, 13.5f + offs)) g_app->current_config->modified = true;
+    if (DrawFileInput("Output Dir:", config::PATH_OUTPUT_DIR, 13.5f + offs)) g_app->current_config->modified = true;
+
+    DrawSpacing (0, 5);
+
+    if (ImGui::TreeNode("Layers")) {
+        if (!g_app->current_config->map_file.get() || !g_app->current_config->map_file->Good()) {
+            ImGui::TextColored(ImVec4{ 1,0,0,1 }, "No valid map file selected!");
+        }
+        else {
+            DrawSpacing(0, 5);
+
+            ImGui::Text("Select the map layers that will be compiled."); ImGui::SameLine();
+            DrawHelpMarker("This option only works when using TrenchBroom as the map editor.");
+
+            DrawSpacing(0, 5);
+
+            static std::vector<int> selected{};
+            selected.resize(g_app->current_config->map_file->_layers.size() + 1);
+
+            if (ImGui::Button("Select All")) {
+                std::memset(selected.data(), 1, selected.size() * sizeof(int));
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Unselect All")) {
+                std::memset(selected.data(), 0, selected.size() * sizeof(int));
+            }
+            ImGui::SameLine();
+            ImGui::Text(" | "); ImGui::SameLine();
+            bool auto_select_new_layers = false;
+            if (ImGui::Checkbox("Auto-select new layers", &auto_select_new_layers)) {
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, INPUT_TEXT_READ_ONLY_COLOR);
+
+            if (ImGui::BeginChild("MapLayers", ImVec2{ (float)g_app->window_width - 128, 96 }, true)) {
+                ImGui::Columns(5, NULL, false);
+
+                if (ImGui::Selectable("Default Layer", (bool*)&selected[0])) {}
+                
+                int idx = 2;
+                for (const auto& layer : g_app->current_config->map_file->_layers) {
+                    if (ImGui::Selectable(layer.name.c_str(), (bool*)&selected[idx-1])) {}
+                    if (idx % 4 == 0) { ImGui::NextColumn(); }
+                    idx++;
+                }
+                ImGui::Columns(1);
+            }
+
+            ImGui::EndChild();
+
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::TreePop();
+    }
+
+    DrawSpacing(0, 5.0f);
+
+    if (ImGui::Checkbox("Watch map file for changes and pre-compile", &g_app->current_config->config.watch_map_file)) {
+        g_app->current_config->modified = true;
+        g_app->current_config->map_file_watcher->SetEnabled(g_app->current_config->config.watch_map_file);
+    }
+    ImGui::SameLine();
+    DrawHelpMarker("Watch the map source file for saves/changes and automatically compile.");
+
+    if (g_app->current_config->config.watch_map_file) {
+        float spacing = ImGui::GetTreeNodeToLabelSpacing();
+        DrawSpacing(spacing, 0);ImGui::SameLine();
+        if (ImGui::Checkbox("Apply -onlyents automatically", &g_app->current_config->config.auto_apply_onlyents)) {
+            g_app->current_config->modified = true;
+        }
+        ImGui::SameLine();
+        DrawHelpMarker(
+            "Apply the -onlyents argument to QBSP and/or LIGHT depending on what has changed in the map. "
+            "If a brush changes, it will run a full compile. "
+            "If a light changes, it will apply -onlyents to QBSP. "
+            "If only point entities changes, it will apply -onlyents to both QBSP and LIGHT. "
+        );
+    }
+
+    DrawSpacing(0, 5.0f);
+}
+
 static void DrawPresetCombo()
 {
     ImGui::Text("Preset: "); ImGui::SameLine();
@@ -1897,21 +1984,17 @@ static void DrawMainContent()
 
     DrawSeparator(5);
 
-    ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_paths_open, ImGuiCond_Once);
-    if (ImGui::TreeNode("Paths")) {
-        g_app->current_config->config.ui_section_paths_open = true;
-
+    ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_map_open, ImGuiCond_Once);
+    if (ImGui::TreeNode("Map options")) {
+        g_app->current_config->config.ui_section_map_open = true;
         DrawSpacing(0, 5);
 
-        float offs = -15.0f;
-        
-        if (DrawFileInput("Map Source:", config::PATH_MAP_SOURCE, 13.5f + offs)) g_app->current_config->modified = true;
-        if (DrawFileInput("Output Dir:", config::PATH_OUTPUT_DIR, 13.5f + offs)) g_app->current_config->modified = true;
+        DrawMapOptions();
 
         ImGui::TreePop();
     }
     else {
-        g_app->current_config->config.ui_section_paths_open = false;
+        g_app->current_config->config.ui_section_map_open = false;
     }
 
     DrawSeparator(5);
@@ -1988,29 +2071,6 @@ static void DrawMainContent()
         if (DrawFileInput("Editor Exe:", config::PATH_EDITOR_EXE, 13.5f - 15)) g_app->current_config->modified = true;
 
         DrawSpacing(0, 1);
-
-        if (ImGui::Checkbox("Watch map file for changes and pre-compile", &g_app->current_config->config.watch_map_file)) {
-            g_app->current_config->modified = true;
-            g_app->current_config->map_file_watcher->SetEnabled(g_app->current_config->config.watch_map_file);
-        }
-        ImGui::SameLine();
-        DrawHelpMarker("Watch the map source file for saves/changes and automatically compile.");
-
-        if (g_app->current_config->config.watch_map_file) {
-            float spacing = ImGui::GetTreeNodeToLabelSpacing();
-            DrawSpacing(spacing, 0);ImGui::SameLine();
-            if (ImGui::Checkbox("Apply -onlyents automatically", &g_app->current_config->config.auto_apply_onlyents)) {
-                g_app->current_config->modified = true;
-            }
-            ImGui::SameLine();
-            DrawHelpMarker(
-                "Apply the -onlyents argument to QBSP and/or LIGHT depending on what has changed in the map. "
-                "If a brush changes, it will run a full compile. "
-                "If a light changes, it will apply -onlyents to QBSP. "
-                "If only point entities changes, it will apply -onlyents to both QBSP and LIGHT. "
-            );
-            DrawSpacing(0, 5.0f);
-        }
 
         if (ImGui::Checkbox("Auto-save on close", &g_app->current_config->config.autosave)) {
             g_app->current_config->modified = true;
@@ -2284,7 +2344,7 @@ bool qc_render()
         console::Print(c);
     }
 
-    //ImGui::ShowDemoWindow();
+    ImGui::ShowDemoWindow();
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 0.9f, 0.9f, 0.9f, 1.0f });
     DrawMenuBar();

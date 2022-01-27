@@ -61,6 +61,7 @@ struct Config
     bool autosave;
 
     bool ui_section_info_open;
+    bool ui_section_map_open;
     bool ui_section_paths_open;
     bool ui_section_tools_open;
     bool ui_section_engine_open;

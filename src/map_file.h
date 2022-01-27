@@ -20,6 +20,12 @@ struct MapEntity
     std::vector<std::string_view> brush_content;
 };
 
+struct MapLayer
+{
+    std::string name;
+    std::string id;
+};
+
 struct MapFile
 {
     explicit MapFile(const std::string& path);
@@ -41,6 +47,7 @@ struct MapFile
 
     std::string _text;
     std::vector<MapEntity> _entities;
+    std::vector<MapLayer> _layers;
 };
 
 MapDiffFlags GetDiffFlags(const MapFile& a, const MapFile& b,
