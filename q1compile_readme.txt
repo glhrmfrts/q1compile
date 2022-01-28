@@ -188,3 +188,10 @@ Guilherme Nemeth - guilherme.nemeth@gmail.com - @nemethg on Quake Mapping discor
 ### License
 
 q1compile is licensed under the MIT License, see LICENSE file for more information.
+
+
+TODO:
+    * Expose/omit layers for compilation and create multiple layer selections.
+    * Custom key bindings, compile the map with a specific layer selection and tool preset.
+    * When auto-compiling, offer the option to run quake and kill it's process when a new change is detected.
+    * Select a specific layer selection and tool preset when auto-compiling.

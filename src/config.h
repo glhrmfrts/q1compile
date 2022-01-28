@@ -38,6 +38,14 @@ struct CompileStep
     std::string ui_last_custom_cmd;
 };
 
+struct LayerSelection
+{
+    bool auto_select_new_layers;
+    bool default_layer_selected;
+    std::string name;
+    std::vector<std::string> layers;
+};
+
 /// Config can be saved and loaded from the path the user chooses
 struct Config
 {
@@ -45,6 +53,7 @@ struct Config
     std::string config_name;
     std::array<std::string, PATH_COUNT> config_paths;
     std::vector<CompileStep> steps;
+    std::vector<LayerSelection> layer_selections;
     std::vector<std::string> custom_worldspawn_light_fields;
     std::vector<std::string> custom_brush_light_fields;
     std::vector<std::string> custom_light_entities;

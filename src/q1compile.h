@@ -71,6 +71,7 @@ struct AppState {
 
     UnsavedChangesCallback       unsaved_changes_callback;
 
+    bool show_layers_window = false;
     bool show_preset_window = false;
     bool show_unsaved_changes_window = false;
     bool show_help_window = false;
