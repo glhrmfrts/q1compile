@@ -222,6 +222,26 @@ static void SetCompileStepVar(std::string name, ConfigLineParser& p, std::vector
     }
 }
 
+static void SetLayerSelectionVar(const std::string& name, ConfigLineParser& p, std::vector<LayerSelection>& selections)
+{
+    if (name == "layer_selection") {
+        std::string selname{};
+        p.ParseString(selname);
+        selections.push_back({ false, false, selname, {} });
+    }
+    else if (name == "layer_selection_autoselect") {
+        p.ParseBool(selections.back().auto_select_new_layers);
+    }
+    else if (name == "layer_selection_default") {
+        p.ParseBool(selections.back().default_layer_selected);
+    }
+    else if (name == "layer_selection_layer") {
+        std::string layername{};
+        p.ParseString(layername);
+        selections.back().layers.push_back(layername);
+    }
+}
+
 static void SetConfigVarOld(Config& config, std::string name, ConfigLineParser& p)
 {
     if (name == "qbsp_args") {
@@ -280,6 +300,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     else if (name == "selected_preset") {
         p.ParseString(config.selected_preset);
     }
+    else if (name == "selected_layers") {
+        p.ParseString(config.selected_layers);
+    }
     else if (name == "ui_info_open") {
         p.ParseBool(config.ui_section_info_open);
     }
@@ -321,6 +344,9 @@ static void SetConfigVar(Config& config, std::string name, ConfigLineParser& p)
     }
     else if (name.find("compile_step") != std::string::npos) {
         SetCompileStepVar(name, p, config.steps);
+    }
+    else if (name.find("layer_selection") != std::string::npos) {
+        SetLayerSelectionVar(name, p, config.layer_selections);
     }
     else {
         int idx = -1;
@@ -455,20 +481,22 @@ static void WriteCompileStep(std::ofstream& fh, const CompileStep& step)
     WriteVar(fh, "compile_step_enabled", step.enabled);
 }
 
+static void WriteLayerSelection(std::ofstream& fh, const LayerSelection& sel)
+{
+    WriteVar(fh, "layer_selection", sel.name);
+    WriteVar(fh, "layer_selection_autoselect", sel.auto_select_new_layers);
+    WriteVar(fh, "layer_selection_default", sel.default_layer_selected);
+    for (const auto& lname : sel.layers) {
+        WriteVar(fh, "layer_selection_layer", lname);
+    }
+}
+
 static void WriteToolPreset(std::ofstream& fh, const ToolPreset& preset)
 {
     WriteVar(fh, "tool_preset", preset.name);
     for (const auto& step : preset.steps) {
         WriteCompileStep(fh, step);
     }
-#if 0
-    WriteVar(fh, "tool_preset_qbsp_args", preset.qbsp_args);
-    WriteVar(fh, "tool_preset_light_args", preset.light_args);
-    WriteVar(fh, "tool_preset_vis_args", preset.vis_args);
-    WriteVar(fh, "tool_preset_qbsp_enabled", (preset.flags & CONFIG_FLAG_QBSP_ENABLED));
-    WriteVar(fh, "tool_preset_light_enabled", (preset.flags & CONFIG_FLAG_LIGHT_ENABLED));
-    WriteVar(fh, "tool_preset_vis_enabled", (preset.flags & CONFIG_FLAG_VIS_ENABLED));
-#endif
 }
 
 void WriteConfig(const Config& config, const std::string& path)
@@ -494,6 +522,7 @@ void WriteConfig(const Config& config, const std::string& path)
     WriteVar(fh, "open_editor_on_launch", config.open_editor_on_launch);
     WriteVar(fh, "autosave", config.autosave);
     WriteVar(fh, "selected_preset", config.selected_preset);
+    WriteVar(fh, "selected_layers", config.selected_layers);
     WriteVar(fh, "ui_engine_open", config.ui_section_engine_open);
     WriteVar(fh, "ui_info_open", config.ui_section_info_open);
     WriteVar(fh, "ui_other_open", config.ui_section_other_open);
@@ -515,6 +544,11 @@ void WriteConfig(const Config& config, const std::string& path)
     // write compile steps
     for (const auto& step : config.steps) {
         WriteCompileStep(fh, step);
+    }
+
+    // write layer selections
+    for (const auto& sel : config.layer_selections) {
+        WriteLayerSelection(fh, sel);
     }
 }
 

@@ -60,6 +60,7 @@ struct Config
     std::vector<std::string> ignore_field_diff;
     std::string quake_args;
     std::string selected_preset;
+    std::string selected_layers;
 
     bool watch_map_file;
     bool use_map_mod;
@@ -70,7 +71,6 @@ struct Config
     bool autosave;
 
     bool ui_section_info_open;
-    bool ui_section_map_open;
     bool ui_section_paths_open;
     bool ui_section_tools_open;
     bool ui_section_engine_open;

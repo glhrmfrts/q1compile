@@ -884,6 +884,19 @@ static void HandleSelectPreset(int i)
     g_app->current_config->modified_steps = false;
 }
 
+static void HandleSelectLayerSelection(int i)
+{
+    if (i < 0) {
+        console::PrintError("invalid layer selection: ");
+        console::PrintValueError(i);
+        console::PrintError("\n");
+        return;
+    }
+
+    g_app->current_config->config.selected_layers = g_app->current_config->config.layer_selections[i].name;
+    g_app->current_config->modified = true;
+}
+
 static void HandleImportPreset()
 {
     std::string pwd = g_app->user_config.last_import_preset_location;
@@ -1105,6 +1118,18 @@ static void ProcessKeyBindCommand(const keybind::KeyBindCommand& cmd)
     }
 }
 
+static int FindLayerSelectionIndex()
+{
+    int idx = 0;
+    for (const auto& layersel : g_app->current_config->config.layer_selections) {
+        if (layersel.name == g_app->current_config->config.selected_layers) {
+            return idx;
+        }
+        idx++;
+    }
+    return -1;
+}
+
 /*
 ====================
 UI Drawing
@@ -1232,6 +1257,12 @@ static void DrawMenuBar()
                 g_app->show_preset_window = true;
             }
 
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Manage layer selections...", "Ctrl+L", nullptr)) {
+                g_app->show_layers_window = true;
+            }
+
             ImGui::EndMenu();
         }
 
@@ -1332,9 +1363,17 @@ static void DrawLayerSelectionCombo()
     float offs = 9.0f;
     DrawSpacing(42+offs, 0); ImGui::SameLine();
 
-    std::string selected_preset_name = "All (default)";
+    int selected_index = FindLayerSelectionIndex();
 
-    if (ImGui::BeginCombo("##layers", selected_preset_name.c_str())) {
+    const char* selected_layers_name;
+    if (selected_index != -1) {
+        selected_layers_name = g_app->current_config->config.selected_layers.c_str();
+    }
+    else {
+        selected_layers_name = "All (default)";
+    }
+
+    if (ImGui::BeginCombo("##layers", selected_layers_name)) {
         if (ImGui::Selectable("All (default)", false)) {
             //g_app->current_config->selected_preset_index = 0;
             //CopyPreset({});
@@ -1342,10 +1381,10 @@ static void DrawLayerSelectionCombo()
 
         for (std::size_t i = 0; i < g_app->current_config->config.layer_selections.size(); i++) {
             auto& sel = g_app->current_config->config.layer_selections[i];
-            bool selected = (i + 1) == g_app->current_config->selected_preset_index;
+            bool selected = selected_index == i;
 
             if (ImGui::Selectable(sel.name.c_str(), selected)) {
-                // HandleSelectPreset(i + 1);
+                HandleSelectLayerSelection(i);
             }
         }
 
@@ -1775,15 +1814,18 @@ static int FindLayerIndex(std::string_view name)
 
 static void DrawLayerSelectionWindow()
 {
+    if (!g_app->current_config->map_file.get() || !g_app->current_config->map_file->Good()) { return; }
+
     static std::vector<int> selected{};
     selected.resize(g_app->current_config->map_file->_layers.size());
 
-    auto DrawLayerSelection = [](config::LayerSelection& sel)
+    auto DrawLayerSelection = [](config::LayerSelection& sel, bool builtin)
     {
         DrawSpacing(0, 5);
 
-        ImGui::Text("Select the map layers that will be compiled."); ImGui::SameLine();
-        DrawHelpMarker("This option only works when using TrenchBroom as the map editor.");
+        const ImGuiInputTextFlags flags = builtin ? ImGuiInputTextFlags_ReadOnly : 0;
+        const float offs = -22;
+        DrawTextInput("Name: ", sel.name, 24 + offs, flags, nullptr, false);
 
         DrawSpacing(0, 5);
 
@@ -1793,30 +1835,50 @@ static void DrawLayerSelectionWindow()
             selected[idx] = 1;
         }
 
-        if (ImGui::Button("Select All")) {
-            std::memset(selected.data(), 1, selected.size() * sizeof(int));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Unselect All")) {
-            std::memset(selected.data(), 0, selected.size() * sizeof(int));
-        }
-        ImGui::SameLine();
-        ImGui::Text(" | "); ImGui::SameLine();
-        bool auto_select_new_layers = false;
-        if (ImGui::Checkbox("Auto-select new layers", &sel.auto_select_new_layers)) {
+        if (!builtin) {
+            ImGui::Text("Select the map layers that will be compiled."); ImGui::SameLine();
+            DrawHelpMarker("This option only works when using TrenchBroom as the map editor.");
+
+            DrawSpacing(0, 5);
+            
+            if (ImGui::Button("Select All")) {
+                std::memset(selected.data(), 1, selected.size() * sizeof(int));
+                sel.default_layer_selected = true;
+                g_app->current_config->modified = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Unselect All")) {
+                std::memset(selected.data(), 0, selected.size() * sizeof(int));
+                sel.default_layer_selected = false;
+                g_app->current_config->modified = true;
+            }
+            ImGui::SameLine();
+            ImGui::Text(" | "); ImGui::SameLine();
+            bool auto_select_new_layers = false;
+            if (ImGui::Checkbox("Auto-select new layers", &sel.auto_select_new_layers)) {
+                g_app->current_config->modified = true;
+            }
+            ImGui::SameLine();
+            DrawHelpMarker("When a new layer is created, automatically add to this selection.");
         }
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, INPUT_TEXT_READ_ONLY_COLOR);
 
-        if (ImGui::BeginChild("MapLayers", ImVec2{ (float)g_app->window_width - 128, 96 }, true)) {
+        if (ImGui::BeginChild("MapLayers", ImVec2{ (float)g_app->window_width * 0.4f, 96 }, true)) {
             ImGui::Columns(5, NULL, false);
 
-            if (ImGui::Selectable("Default Layer", &sel.default_layer_selected)) {}
+            if (ImGui::Selectable("Default Layer", &sel.default_layer_selected)) {
+                g_app->current_config->modified = true;
+            }
+
+            ImGui::NextColumn();
             
             int idx = 1;
             for (const auto& layer : g_app->current_config->map_file->_layers) {
-                if (ImGui::Selectable(layer.name.c_str(), (bool*)&selected[idx-1])) {}
-                if (idx % 4 == 0) { ImGui::NextColumn(); }
+                if (ImGui::Selectable(layer.name.c_str(), (bool*)&selected[idx-1])) {
+                    g_app->current_config->modified = true;
+                }
+                ImGui::NextColumn();
                 idx++;
             }
             ImGui::Columns(1);
@@ -1842,24 +1904,35 @@ static void DrawLayerSelectionWindow()
             ImGui::OpenPopup("Manage Layer Selections");
         }
 
-        ImGui::SetNextWindowSize({ g_app->window_width*0.5f, g_app->window_height * 0.7f }, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({ g_app->window_width * 0.5f, g_app->window_height * 0.7f }, ImGuiCond_Always);
         ImGui::SetNextWindowPos({ g_app->window_width * 0.5f, g_app->window_height * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
 
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
 
         if (ImGui::BeginPopupModal("Manage Layer Selections", &g_app->show_layers_window, flags)) {
-            if (ImGui::Button("Add Layer Selection")) {
-                //newly_added_index = g_app->user_config.tool_presets.size();
+            static int newly_added_index = -1;
 
-                config::ToolPreset preset = {};
-                preset.name = "New Preset";
-                //g_app->user_config.tool_presets.push_back(preset);
+            if (ImGui::Button("Add Layer Selection")) {
+                newly_added_index = g_app->current_config->config.layer_selections.size();
+
+                config::LayerSelection sel = {};
+                sel.name = "New Layer Selection";
+                sel.auto_select_new_layers = true;
+                sel.default_layer_selected = true;
+                for (const auto& layer : g_app->current_config->map_file->_layers) {
+                    sel.layers.push_back(layer.name);
+                }
+                g_app->current_config->config.layer_selections.push_back(sel);
+
+                g_app->current_config->modified = true;
             }
+
+            DrawSpacing(0, 5);
 
             {
                 // Draw the built-in default selection
                 ImGui::PushID(0);
-                if (ImGui::TreeNode("All (default)")) {
+                if (ImGui::TreeNode("", "All (default)")) {
                     config::LayerSelection sel = {};
                     sel.auto_select_new_layers = true;
                     sel.default_layer_selected = true;
@@ -1867,17 +1940,26 @@ static void DrawLayerSelectionWindow()
                     for (const auto& layer : g_app->current_config->map_file->_layers) {
                         sel.layers.push_back(layer.name);
                     }
-                    DrawLayerSelection(sel);
+                    DrawLayerSelection(sel, true);
                     ImGui::TreePop();
-                }               
+                }
+                ImGui::PopID();           
             }
 
             int idx = 1;
             for (auto& sel : g_app->current_config->config.layer_selections) {
+                DrawSeparator(5);
+
                 ImGui::PushID(idx);
 
-                if (ImGui::TreeNode(sel.name.c_str())) {
-                    DrawLayerSelection(sel);
+                // If it's a newly added preset, set it open
+                if (newly_added_index != -1 && (idx-1 == newly_added_index)) {
+                    ImGui::SetNextTreeNodeOpen(true);
+                    newly_added_index = -1;
+                }
+
+                if (ImGui::TreeNode("", sel.name.c_str())) {
+                    DrawLayerSelection(sel, false);
                     ImGui::TreePop();
                 }
 
@@ -2098,9 +2180,9 @@ static void DrawMainContent()
 
     DrawSeparator(5);
 
-    ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_map_open, ImGuiCond_Once);
+    ImGui::SetNextItemOpen(g_app->current_config->config.ui_section_paths_open, ImGuiCond_Once);
     if (ImGui::TreeNode("Map options")) {
-        g_app->current_config->config.ui_section_map_open = true;
+        g_app->current_config->config.ui_section_paths_open = true;
         DrawSpacing(0, 5);
 
         DrawMapOptions();
@@ -2108,7 +2190,7 @@ static void DrawMainContent()
         ImGui::TreePop();
     }
     else {
-        g_app->current_config->config.ui_section_map_open = false;
+        g_app->current_config->config.ui_section_paths_open = false;
     }
 
     DrawSeparator(5);
